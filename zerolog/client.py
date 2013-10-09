@@ -1,0 +1,108 @@
+# encoding: utf-8
+#
+
+import sys
+import os
+import argparse
+import logging
+import collections
+import json
+
+import gevent
+import gevent.queue
+
+import zmq.green as zmq
+
+import zerolog
+
+
+class LogSubscriber(gevent.Greenlet):
+    """ Subscribe to log dispatcher and emit log records to the local logger.
+    """
+    def __init__(self, uri, topics=None, context=None, log_level_name='info'):
+        super(LogSubscriber, self).__init__()
+        self.uri = uri
+        self.topics = topics
+        self.context = context or zmq.Context()
+        self.log_level_name = log_level_name
+        self.log_level = getattr(logging, self.log_level_name.upper())
+        self._keep_going = True
+
+    def _run(self):
+        self.socket = self.context.socket(zmq.SUB)
+        if not self.topics:
+            # subscribe to all
+            self.socket.setsockopt(zmq.SUBSCRIBE, '')
+        else:
+            if not isinstance(self.topics, collections.Iterable):
+                self.topics = [self.topics]
+            for topic in self.topics:
+                self.socket.setsockopt(zmq.SUBSCRIBE, topic)
+        self.socket.connect(self.uri)
+        while self._keep_going:
+            topic, message = self.socket.recv_multipart()
+            record_dict = json.loads(message)
+            #print('topic: {0}'.format(topic))
+            #import pprint
+            #pprint.pprint(record_dict)
+
+            # inject log record into local logger
+            record = logging.makeLogRecord(record_dict)
+            logger_name = topic.split('.')[0]
+            logger = zerolog.getLocalLogger(logger_name)
+            if logger.isEnabledFor(record.levelno):
+                logger.handle(record)
+        self.socket.close()
+
+    def stop(self):
+        self._keep_going = False
+        self.kill()
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d', '--debug', action='store_true', default=False,
+        help='set log level to debug')
+    parser.add_argument('-v', '--verbose', action='store_true', default=False,
+        help='be verbose, set log level to info')
+    parser.add_argument('--uri', required=True,
+        help='uri of the zeromq socket on which log messages are published')
+    default_format='%(levelname)s: %(name)s: %(message)s'
+    parser.add_argument('--log-level', default='info',
+        help='log level. defaults to info')
+    parser.add_argument('--log-format', default=default_format,
+        help='log format string. defaults to {}'.format(default_format.replace('%', '%%')))
+    parser.add_argument('topic', default=None,
+        nargs='*',
+        help='the log topics to subscribe for')
+
+    args = parser.parse_args(argv)
+    level = getattr(logging, args.log_level.upper())
+    logging.basicConfig(level=level, format=args.log_format, stream=sys.stdout)
+
+    if args.verbose:
+        logging.root.setLevel(logging.INFO)
+    # debug overrides verbose
+    if args.debug:
+        logging.root.setLevel(logging.DEBUG)
+
+    return args
+
+
+def main(argv=sys.argv[1:]):
+    args = parse_args(argv)
+    context = zmq.Context()
+    job = LogSubscriber(zerolog.get_endpoint(args.uri),
+        topics=args.topic,
+        context=context,
+        log_level_name=args.log_level
+    )
+    try:
+        job.start()
+        job.join()
+    except KeyboardInterrupt:
+        job.stop()
+
+
+if __name__ == '__main__':
+    main()

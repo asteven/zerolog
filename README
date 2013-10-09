@@ -1,0 +1,12 @@
+- collect log messages from multiple processes
+- publish log messages to registered subscriberes
+- manage and deploy logging config for multiple processes
+--------------------------------------------------------------------------------
+
+cd ~/vcs/zerolog
+# shell 1
+PYTHONPATH="." python zerolog dispatch
+# shell 2
+PYTHONPATH="." python zerolog tail
+# shell 3
+PYTHONPATH="." python zerolog emit 0.1
