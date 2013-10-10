@@ -1,7 +1,7 @@
 # encoding: utf-8
 
 import os
-import sys
+import json
 import socket
 import logging
 
@@ -58,50 +58,6 @@ def configure(endpoints=None, context=None):
     )
 
 
-class ZerologManager(logging.Manager):
-    def __init__(self, manager, endpoints, context=None):
-        super(ZerologManager, self).__init__(manager.root)
-        self.inherit(manager)
-        self.endpoints = endpoints
-        self.context = context or zmq.Context.instance()
-        self.socket = self.context.socket(zmq.SUB)
-        self.socket.connect(self.endpoints['publish'])
-        self.zerolog_handler = ZerologHandler(self.endpoints['collect'], context=self.context)
-        #self.zerolog_handler = GreenZerologHandler(self.endpoints['collect'], context=self.context)
-        self._keep_going = True
-        gevent.spawn(self.__configure)
-
-    def __configure(self, *args):
-        while self._keep_going:
-            topic, level = self.socket.recv_multipart()
-            logger_name = topic.lstrip(config_prefix)
-            logger = self.getLogger(logger_name)
-            logger.setLevel(level.upper())
-
-    def subscribe(self, name):
-        self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
-
-    def getLogger(self, name):
-        subscribe = (not name in self.loggerDict \
-            or isinstance(self.loggerDict[name], logging.PlaceHolder)
-        )
-        logger = super(ZerologManager, self).getLogger(name)
-        if not self.zerolog_handler in logger.handlers:
-            logger.addHandler(self.zerolog_handler)
-        if subscribe:
-            self.subscribe(name)
-        return logger
-
-    def inherit(self, other_manager):
-        for attr,value in other_manager.__dict__.items():
-            if attr != 'loggerDict':
-                setattr(self, attr, value)
-        for name,logger in other_manager.loggerDict.items():
-            self.loggerDict[name] = logger
-            if not isinstance(logger, logging.PlaceHolder):
-                self.subscribe(name)
-
-
 def getLogger(name=None):
     """Get a logger with a ZerologHandler attached.
 
@@ -119,6 +75,92 @@ def getLocalLogger(name=None):
     if not logger.handlers:
         logger.addHandler(NullHandler())
     return logger
+
+
+class ZerologManager(logging.Manager):
+    def __init__(self, manager, endpoints, context=None):
+        super(ZerologManager, self).__init__(manager.root)
+        self.inherit(manager)
+        self.endpoints = endpoints
+        self.context = context or zmq.Context.instance()
+        self.socket = self.context.socket(zmq.SUB)
+        self.socket.connect(self.endpoints['publish'])
+        self.log = logging.getLogger('zerolog')
+
+        self.zerolog_handler = ZerologHandler(self.endpoints['collect'], context=self.context)
+        #self.zerolog_handler = GreenZerologHandler(self.endpoints['collect'], context=self.context)
+
+        # by default only the root logger get's a zerolog handler
+        self.add_zerolog_handler(self.root)
+
+        self._keep_going = True
+        gevent.spawn(self.__configure)
+
+    def __configure(self):
+        """Main loop listening for config changes from the zerolog server.
+
+        TODO: maybe create a thread based version of this to eliminate the
+            dependency on gevent for clients.
+            Will still need gevent to run the server.
+        """
+        while self._keep_going:
+            topic, message = self.socket.recv_multipart()
+            logger_name = topic[len(config_prefix):]
+            config = json.loads(message)
+            logger = self.getLogger(logger_name)
+            if 'level' in config:
+                level = config['level'].upper()
+                self.log.info('setting loglevel of {0} to {1}'.format(logger_name, level))
+                logger.setLevel(level)
+            if 'propagate' in config:
+                propagate = config['propagate']
+                if propagate:
+                    # if we are propagating to parent logger
+                    # there is no need for this logger to have it's
+                    # own zerolog handler, so remove it
+                    self.remove_zerolog_handler(logger)
+                else:
+                    # otherwise it needs its own zerolog handler
+                    # or we simply wont get any logs from this handler
+                    self.add_zerolog_handler(logger)
+                logger.propagate = propagate
+
+    def add_zerolog_handler(self, logger):
+        if not self.zerolog_handler in logger.handlers:
+            self.log.info('adding zerolog handler to {0}'.format(logger.name))
+            logger.addHandler(self.zerolog_handler)
+
+    def remove_zerolog_handler(self, logger):
+        if self.zerolog_handler in logger.handlers:
+            self.log.info('removing zerolog handler from {0}'.format(logger.name))
+            logger.removeHandler(self.zerolog_handler)
+
+    def subscribe(self, name):
+        self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
+
+    def getLogger(self, name):
+        """Get a logger instance and subscribe to the zerolog server for
+        config updates for it.
+        """
+        subscribe = (not name in self.loggerDict \
+            or isinstance(self.loggerDict[name], logging.PlaceHolder)
+        )
+        logger = super(ZerologManager, self).getLogger(name)
+        if subscribe:
+            self.subscribe(name)
+        return logger
+
+    def inherit(self, other_manager):
+        """Inherit attributes and logger instances from an other/existing
+        manager.
+        """
+        for attr,value in other_manager.__dict__.items():
+            if attr != 'loggerDict':
+                setattr(self, attr, value)
+        for name,logger in other_manager.loggerDict.items():
+            self.loggerDict[name] = logger
+            if not isinstance(logger, logging.PlaceHolder):
+                self.subscribe(name)
 
 
 class ZerologHandler(logging.Handler):
@@ -176,6 +218,8 @@ class ZerologHandler(logging.Handler):
             self.handleError(record)
 
 
+# FIXME: is there _any_ reason/benefit to use this instead of the other one?
+#         probably not, probably nuke it
 class GreenZerologHandler(logging.Handler):
     """ A logging handler for sending notifications to a ømq PUSH socket.
     """

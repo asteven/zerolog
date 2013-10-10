@@ -1,5 +1,10 @@
-- all the logging client really needs is a log level for each logger
+- all the config a logging client really needs for each logger is:
+   - a log level
+   - weither a logger should propagate or not
 - formatters and fancy handlers are only needed on the logging server
+- by default only the root logger gets a zerolog handler
+- if a logger is configured to not propagate, it needs to have it's own zerolog
+   handler as otherwise we never get its log messages.
 
 --------------------------------------------------------------------------------
 

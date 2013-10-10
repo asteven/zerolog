@@ -2,14 +2,12 @@
 #
 
 import sys
-import os
 import argparse
 import logging
 import collections
 import json
 
 import gevent
-import gevent.queue
 
 import zmq.green as zmq
 
@@ -17,7 +15,7 @@ import zerolog
 
 
 class LogSubscriber(gevent.Greenlet):
-    """ Subscribe to log dispatcher and emit log records to the local logger.
+    """ Subscribe to log dispatcher and emit log records to the local logging system.
     """
     def __init__(self, uri, topics=None, context=None, log_level_name='info'):
         super(LogSubscriber, self).__init__()
@@ -37,7 +35,7 @@ class LogSubscriber(gevent.Greenlet):
         self.socket.connect(self.uri)
         while self._keep_going:
             topic, message = self.socket.recv_multipart()
-            name_and_level = topic.lstrip(zerolog.stream_prefix)
+            name_and_level = topic[len(zerolog.stream_prefix):]
             record_dict = json.loads(message)
             #print('topic: {0}'.format(topic))
             #import pprint

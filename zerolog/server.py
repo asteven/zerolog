@@ -103,7 +103,6 @@ class Dispatcher(gevent.Greenlet):
             record_dict = self.channel.get()
             topic = '.'.join((record_dict['name'], record_dict['levelname']))
             topic = zerolog.stream_prefix + topic
-            topic = topic.encode('utf-8')
             if not self.quiet:
                 # inject log record into local logger
                 record = logging.makeLogRecord(record_dict)
@@ -112,7 +111,7 @@ class Dispatcher(gevent.Greenlet):
                 if logger.isEnabledFor(record.levelno):
                     logger.handle(record)
             self.publisher.send_multipart([
-                topic,
+                topic.encode('utf-8'),
                 json.dumps(record_dict)])
             # FIXME: is this sleep needed? Why?
             gevent.sleep()
@@ -138,7 +137,7 @@ class Dispatcher(gevent.Greenlet):
     def loggers(self):
         for subscription in self.subscriptions:
             if subscription.startswith(zerolog.config_prefix):
-                yield subscription.lstrip(zerolog.config_prefix)
+                yield subscription[len(zerolog.config_prefix):]
 
     def __client_emulator(self):
         """Emulate a tool/sysadmin changing log levels.
@@ -146,13 +145,19 @@ class Dispatcher(gevent.Greenlet):
         levels = 'critical error warning info debug'.split()
         import random
         while self._keep_going:
-            level = random.choice(levels)
-            for logger_name in self.loggers:
-                print('sending {0} to {1}'.format(level, logger_name))
+            loggers = list(self.loggers)
+            if loggers:
+                config = {
+                    'level': random.choice(levels),
+                    'propagate': random.choice([0,1]),
+                }
+                logger_name = random.choice(list(self.loggers))
+                #for logger_name in self.loggers:
+                print('configure {0} with: {1}'.format(logger_name, config))
                 topic = zerolog.config_prefix + logger_name
                 self.publisher.send_multipart([
-                    topic,
-                    level
+                    topic.encode('utf-8'),
+                    json.dumps(config)
                 ])
             gevent.sleep(5)
 

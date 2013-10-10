@@ -1,6 +1,7 @@
 - collect log messages from multiple processes
 - publish log messages to registered subscriberes
-- manage and deploy logging config for multiple processes
+- manage and distribute configuration for multiple loggers in multiple processes
+
 --------------------------------------------------------------------------------
 
 cd ~/vcs/zerolog
@@ -11,3 +12,4 @@ PYTHONPATH="." python zerolog tail
 # shell 3
 PYTHONPATH="." python zerolog emit 0.1
 PYTHONPATH="." python zerolog zeroemit 0.1
+PYTHONPATH="." python zerolog multiemit 0.5
