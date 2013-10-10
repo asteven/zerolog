@@ -10,3 +10,4 @@ PYTHONPATH="." python zerolog dispatch
 PYTHONPATH="." python zerolog tail
 # shell 3
 PYTHONPATH="." python zerolog emit 0.1
+PYTHONPATH="." python zerolog zeroemit 0.1

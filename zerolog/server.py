@@ -10,7 +10,6 @@ import sys
 import json
 import argparse
 import logging
-#log = logging.getLogger()
 
 import gevent
 import gevent.queue
@@ -21,11 +20,6 @@ import zmq.green as zmq
 import zerolog
 
 
-#   'endpoints': {
-#      'control': 'tcp://*:6660',
-#      'collect': 'tcp://*:6661',
-#      'publish': 'tcp://*:6662',
-#   },
 config = {
    'endpoints': {
       'control': 'tcp://127.0.0.42:6660',
@@ -58,18 +52,21 @@ config = {
 
 
 class Dispatcher(gevent.Greenlet):
-    def __init__(self, config, context=None, quiet=False):
+    def __init__(self, endpoints, context=None, quiet=False):
         super(Dispatcher, self).__init__()
-        self.config = config
+        self.endpoints = endpoints
         self.context = context or zmq.Context()
         self.greenlets = Group()
         self.channel = gevent.queue.Queue(0)
         self._keep_going = True
         self.quiet = quiet
+        self.subscriptions = []
 
     def _run(self):
         self.greenlets.add(gevent.spawn(self.__collect))
         self.greenlets.add(gevent.spawn(self.__publish))
+        self.greenlets.add(gevent.spawn(self.__configure))
+        self.greenlets.add(gevent.spawn(self.__client_emulator))
         self.greenlets.join()
 
     def stop(self):
@@ -87,23 +84,25 @@ class Dispatcher(gevent.Greenlet):
         # that there is a problem
         #self.collector = self.context.socket(zmq.PULL)
 
-        self.collector.bind(self.config['endpoints']['collect'])
+        self.collector.bind(self.endpoints['collect'])
         while self._keep_going:
             record_dict = self.collector.recv_json()
             self.channel.put(record_dict)
+            # FIXME: is this sleep needed? Why?
             gevent.sleep()
         if self.collector:
             self.collector.close()
 
     def __publish(self):
-        self.publisher = self.context.socket(zmq.PUB)
+        self.publisher = self.context.socket(zmq.XPUB)
         self.publisher.hwm = 100000
         # linger: if socket is closed, try sending remaining messages for 1000 milliseconds, then give up
         self.publisher.linger = 1000
-        self.publisher.bind(self.config['endpoints']['publish'])
+        self.publisher.bind(self.endpoints['publish'])
         while self._keep_going:
             record_dict = self.channel.get()
             topic = '.'.join((record_dict['name'], record_dict['levelname']))
+            topic = zerolog.stream_prefix + topic
             topic = topic.encode('utf-8')
             if not self.quiet:
                 # inject log record into local logger
@@ -115,9 +114,47 @@ class Dispatcher(gevent.Greenlet):
             self.publisher.send_multipart([
                 topic,
                 json.dumps(record_dict)])
+            # FIXME: is this sleep needed? Why?
             gevent.sleep()
         if self.publisher:
             self.publisher.close()
+
+    def __configure(self):
+        while self._keep_going:
+            try:
+                rc = self.publisher.recv()
+                subscription = rc[1:]
+                status = rc[0] == "\x01"
+                if status:
+                    print('client subscribed to {}'.format(subscription))
+                    self.subscriptions.append(subscription)
+                else:
+                    print('client unsubscribed from {}'.format(subscription))
+                    self.subscriptions.remove(subscription)
+            except zmq.ZMQError as e:
+                print('{0}'.format(e))
+
+    @property
+    def loggers(self):
+        for subscription in self.subscriptions:
+            if subscription.startswith(zerolog.config_prefix):
+                yield subscription.lstrip(zerolog.config_prefix)
+
+    def __client_emulator(self):
+        """Emulate a tool/sysadmin changing log levels.
+        """
+        levels = 'critical error warning info debug'.split()
+        import random
+        while self._keep_going:
+            level = random.choice(levels)
+            for logger_name in self.loggers:
+                print('sending {0} to {1}'.format(level, logger_name))
+                topic = zerolog.config_prefix + logger_name
+                self.publisher.send_multipart([
+                    topic,
+                    level
+                ])
+            gevent.sleep(5)
 
 
 class ConfigServer(gevent.Greenlet):
@@ -130,7 +167,7 @@ class ConfigServer(gevent.Greenlet):
 
     def _run(self):
         self.greenlets.add(gevent.spawn(self.__router))
-        #self.greenlets.add(gevent.spawn(self.__update))
+        self.greenlets.add(gevent.spawn(self.__publisher))
         self.greenlets.join()
 
     def stop(self):
@@ -185,6 +222,8 @@ def parse_args(argv):
 
 
 def main(argv=sys.argv[1:]):
+    print('this is broken')
+    return
     args = parse_args(argv)
     context = zmq.Context()
     #with open(args.config, 'r') as fd:

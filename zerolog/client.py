@@ -22,7 +22,7 @@ class LogSubscriber(gevent.Greenlet):
     def __init__(self, uri, topics=None, context=None, log_level_name='info'):
         super(LogSubscriber, self).__init__()
         self.uri = uri
-        self.topics = topics
+        self.topics = topics or ['']
         self.context = context or zmq.Context()
         self.log_level_name = log_level_name
         self.log_level = getattr(logging, self.log_level_name.upper())
@@ -30,17 +30,14 @@ class LogSubscriber(gevent.Greenlet):
 
     def _run(self):
         self.socket = self.context.socket(zmq.SUB)
-        if not self.topics:
-            # subscribe to all
-            self.socket.setsockopt(zmq.SUBSCRIBE, '')
-        else:
-            if not isinstance(self.topics, collections.Iterable):
-                self.topics = [self.topics]
-            for topic in self.topics:
-                self.socket.setsockopt(zmq.SUBSCRIBE, topic)
+        if not isinstance(self.topics, collections.Iterable):
+            self.topics = [self.topics]
+        for topic in self.topics:
+            self.socket.setsockopt(zmq.SUBSCRIBE, zerolog.stream_prefix + topic)
         self.socket.connect(self.uri)
         while self._keep_going:
             topic, message = self.socket.recv_multipart()
+            name_and_level = topic.lstrip(zerolog.stream_prefix)
             record_dict = json.loads(message)
             #print('topic: {0}'.format(topic))
             #import pprint
@@ -48,7 +45,7 @@ class LogSubscriber(gevent.Greenlet):
 
             # inject log record into local logger
             record = logging.makeLogRecord(record_dict)
-            logger_name = topic.split('.')[0]
+            logger_name = name_and_level.split('.')[0]
             logger = zerolog.getLocalLogger(logger_name)
             if logger.isEnabledFor(record.levelno):
                 logger.handle(record)

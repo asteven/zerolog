@@ -1,9 +1,10 @@
 - all the logging client really needs is a log level for each logger
 - formatters and fancy handlers are only needed on the logging server
 
-use custom logging.Manager which uses a custom LoggerClass.
-On instantiation LoggerClass get's log level from logging server and
-subscribes to publisher to get future updates.
+--------------------------------------------------------------------------------
+
+use custom logging.Manager. When a logger is created it get's its log level from
+logging server and subscribes to publisher to get future updates.
 
 --------------------------------------------------------------------------------
 
@@ -64,15 +65,6 @@ loggers = {
 
 
 
-loggers.dhcp
-
-
-
-
-zerolog.getLogger(name)
-- checks if there is a config for name on the logconfigserver
-- if not, get's the root logger config
-
 --------------------------------------------------------------------------------
 
 # @see http://zguide.zeromq.org/py:rtreq
@@ -81,3 +73,10 @@ _socket.connect('tcp://127.0.0.42:6660')
 _socket.send('update')
 config = _socket.recv_json()
 print('{0!r}'.format(config))
+--------------------------------------------------------------------------------
+
+import zerolog
+l = zerolog.getLogger('foo')
+l.info('bli')
+l.debug('bla')
+
