@@ -1,2 +1,5 @@
+- scripts to start and configure zerolog server
+   - config from whatever the standard python logging module can handle
+   - config from json file
 - maintain shared global state of all connected loggers
 - write a client app, ala circusctl, to change logger properties on the fly
