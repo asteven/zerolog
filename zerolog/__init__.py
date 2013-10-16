@@ -59,7 +59,7 @@ def configure(endpoints=None, context=None):
 
 
 def getLogger(name=None):
-    """Get a logger with a ZerologHandler attached.
+    """Get a zerolog enabled logger.
 
     Configures zerolog to use default endpoints if not already done explicitly.
     """
@@ -136,6 +136,8 @@ class ZerologManager(logging.Manager):
             logger.removeHandler(self.zerolog_handler)
 
     def subscribe(self, name):
+        """Subscribe to receive config updates for a logger.
+        """
         self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
 
     def getLogger(self, name):
@@ -164,7 +166,7 @@ class ZerologManager(logging.Manager):
 
 
 class ZerologHandler(logging.Handler):
-    """ A logging handler for sending notifications to a ømq PUSH socket.
+    """ A logging handler for sending notifications to a ømq endpoint.
     """
     def __init__(self, endpoint, context=None):
         self.endpoint = endpoint
