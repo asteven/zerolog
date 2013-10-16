@@ -88,7 +88,6 @@ class Dispatcher(gevent.Greenlet):
         while self._keep_going:
             record_dict = self.collector.recv_json()
             self.channel.put(record_dict)
-            # FIXME: is this sleep needed? Why?
             gevent.sleep()
         if self.collector:
             self.collector.close()
@@ -113,7 +112,6 @@ class Dispatcher(gevent.Greenlet):
             self.publisher.send_multipart([
                 topic.encode('utf-8'),
                 json.dumps(record_dict)])
-            # FIXME: is this sleep needed? Why?
             gevent.sleep()
         if self.publisher:
             self.publisher.close()
