@@ -14,12 +14,23 @@ logging server and subscribes to publisher to get future updates.
 --------------------------------------------------------------------------------
 
 how could config management for logger look like?
-- keep logging config as global dictConfig
+- keep logging config as global dict, e.g.
+loggers = {
+   'dhcp': {
+      'level': 'INFO',
+      'handler': {
+          'class': 'zerolog.ZmqHandler',
+          'level': 'NOTSET',
+          'uri': 'tcp://127.0.0.42:6661',
+      },
+   }
+}
 - write a client app, ala circusctl, to change logger properties on the fly
 - notify clients about changes
 
 
 --------------------------------------------------------------------------------
+- usage with standard python logging
 logging_config = {
    'version': 1,
    'disable_existing_loggers': False,
@@ -39,7 +50,7 @@ logging_config = {
       'zmq': {
           'class': 'zerolog.ZmqHandler',
           'level': 'NOTSET',
-          'uri': uri,
+          'uri': 'tcp://127.0.0.42:6660',
       },
    },
    'root': {
@@ -53,20 +64,24 @@ logging_config = {
       },
    },
 }
+import logging.config
+logging.config.dictConfig(logging_config)
 
+- usage of advanced features like auto configuration
+import zerolog
+zerolog.configure(endpoints={
+   'collect': 'ipc:///tmp/zerolog/collect',
+   'publish': 'ipc:///tmp/zerolog/publish',
+})
+import logging
+logger = logging.getLogger('foobar')
+logger.info('whatever')
 
+- or using default endpoints
+import zerolog
+logger = zerolog.getLogger('foobar')
+logger.info('whatever')
 
-
-loggers = {
-   'dhcp': {
-      'level': 'INFO',
-      'handler': {
-          'class': 'zerolog.ZmqHandler',
-          'level': 'NOTSET',
-          'uri': 'tcp://127.0.0.42:6661',
-      },
-   }
-}
 
 
 
@@ -78,10 +93,3 @@ _socket.connect('tcp://127.0.0.42:6660')
 _socket.send('update')
 config = _socket.recv_json()
 print('{0!r}'.format(config))
---------------------------------------------------------------------------------
-
-import zerolog
-l = zerolog.getLogger('foo')
-l.info('bli')
-l.debug('bla')
-
