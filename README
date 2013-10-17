@@ -1,5 +1,5 @@
 - collect log messages from multiple processes
-- publish log messages to registered subscriberes
+- publish log messages to registered subscribers
 - manage and distribute configuration for multiple loggers in multiple processes
 
 --------------------------------------------------------------------------------
