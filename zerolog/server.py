@@ -21,51 +21,61 @@ import zerolog
 
 
 config = {
-   'endpoints': {
-      'control': 'tcp://127.0.0.42:6660',
-      'collect': 'tcp://127.0.0.42:6661',
-      'publish': 'tcp://127.0.0.42:6662',
-   },
-   'logging': {
-       'version': 1,
-       'disable_existing_loggers': False,
-       'formatters': {
-           'simple': {
-               'format': '%(asctime)s %(name)s %(levelname)s: %(message)s',
-               'datefmt': '%Y-%m-%d %H:%M:%S',
-           },
-       },
-       'handlers': {
-           'console': {
-               'class': 'logging.StreamHandler',
-               'level': 'NOTSET',
-               'formatter': 'simple',
-               'stream': 'ext://sys.stdout',
-           },
-       },
-       'root': {
-           'level': 'ERROR',
-           'handlers': ['console'],
-       },
-   }
+    'endpoints': {
+        'control': 'tcp://127.0.0.42:6660',
+        'collect': 'tcp://127.0.0.42:6661',
+        'publish': 'tcp://127.0.0.42:6662',
+    },
+    'logging': {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'formatters': {
+            'simple': {
+                'format': '%(asctime)s %(name)s %(levelname)s: %(message)s',
+                'datefmt': '%Y-%m-%d %H:%M:%S',
+            },
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'level': 'NOTSET',
+                'formatter': 'simple',
+                'stream': 'ext://sys.stdout',
+            },
+        },
+        'root': {
+            'level': 'ERROR',
+            'handlers': ['console'],
+        },
+        'loggers': {
+            'zerolog': {
+                'level': 'ERROR',
+            },
+            'example': {
+                'level': 'INFO',
+            },
+        },
+    },
 }
 
 
 class Dispatcher(gevent.Greenlet):
-    def __init__(self, endpoints, context=None, quiet=False):
+    def __init__(self, config, context=None, quiet=False):
         super(Dispatcher, self).__init__()
-        self.endpoints = endpoints
+        self.config = config
         self.context = context or zmq.Context()
         self.greenlets = Group()
         self.channel = gevent.queue.Queue(0)
         self._keep_going = True
         self.quiet = quiet
         self.subscriptions = []
+        self.loggers = {}
+        self.log = logging.getLogger('zerolog')
 
     def _run(self):
         self.greenlets.add(gevent.spawn(self.__collect))
         self.greenlets.add(gevent.spawn(self.__publish))
-        self.greenlets.add(gevent.spawn(self.__configure))
+        self.greenlets.add(gevent.spawn(self.__subscription_handler))
         self.greenlets.add(gevent.spawn(self.__client_emulator))
         self.greenlets.join()
 
@@ -75,7 +85,7 @@ class Dispatcher(gevent.Greenlet):
         self.kill()
 
     def __collect(self):
-        # FIXME: should this be a PULL or a SUB socket?
+        # FIXME: have to decide if this should be a PULL or a SUB socket.
         # using SUB let's the emitter use PUB which doesn't block if HWM is
         # reached
         self.collector = self.context.socket(zmq.SUB)
@@ -84,7 +94,7 @@ class Dispatcher(gevent.Greenlet):
         # that there is a problem
         #self.collector = self.context.socket(zmq.PULL)
 
-        self.collector.bind(self.endpoints['collect'])
+        self.collector.bind(self.config['endpoints']['collect'])
         while self._keep_going:
             record_dict = self.collector.recv_json()
             self.channel.put(record_dict)
@@ -97,7 +107,7 @@ class Dispatcher(gevent.Greenlet):
         self.publisher.hwm = 100000
         # linger: if socket is closed, try sending remaining messages for 1000 milliseconds, then give up
         self.publisher.linger = 1000
-        self.publisher.bind(self.endpoints['publish'])
+        self.publisher.bind(self.config['endpoints']['publish'])
         while self._keep_going:
             record_dict = self.channel.get()
             topic = '.'.join((record_dict['name'], record_dict['levelname']))
@@ -116,26 +126,49 @@ class Dispatcher(gevent.Greenlet):
         if self.publisher:
             self.publisher.close()
 
-    def __configure(self):
+    def __subscription_handler(self):
         while self._keep_going:
             try:
                 rc = self.publisher.recv()
                 subscription = rc[1:]
                 status = rc[0] == "\x01"
                 if status:
-                    print('client subscribed to {}'.format(subscription))
+                    self.log.info('client subscribed to {}'.format(subscription))
                     self.subscriptions.append(subscription)
+                    if subscription.startswith(zerolog.config_prefix):
+                        self.add_logger(subscription[len(zerolog.config_prefix):])
                 else:
-                    print('client unsubscribed from {}'.format(subscription))
+                    self.log.info('client unsubscribed from {}'.format(subscription))
                     self.subscriptions.remove(subscription)
+                    if subscription.startswith(zerolog.config_prefix):
+                        self.remove_logger(subscription[len(zerolog.config_prefix):])
             except zmq.ZMQError as e:
                 print('{0}'.format(e))
 
+    def add_logger(self, logger_name):
+        if not logger_name in self.loggers:
+            logger_config = self.config.get('logging', {}).get('loggers', {}).get(logger_name, {})
+            self.loggers[logger_name] = logger_config
+        self.loggers[logger_name]['subscribed'] = True
+
+    def remove_logger(self, logger_name):
+        if logger_name in self.loggers:
+            self.loggers[logger_name]['subscribed'] = False
+
+    def configure_logger(self, logger_name):
+        config = self.loggers[logger_name]
+        self.log.info('configure logger {0} with: {1}'.format(logger_name, config))
+        topic = zerolog.config_prefix + logger_name
+        self.publisher.send_multipart([
+            topic.encode('utf-8'),
+            json.dumps(config)
+        ])
+
     @property
-    def loggers(self):
-        for subscription in self.subscriptions:
-            if subscription.startswith(zerolog.config_prefix):
-                yield subscription[len(zerolog.config_prefix):]
+    def subscribed_loggers(self):
+        for name,config in self.loggers.items():
+            if config['subscribed'] == True:
+                yield name
 
     def __client_emulator(self):
         """Emulate a tool/sysadmin changing log levels.
@@ -143,20 +176,14 @@ class Dispatcher(gevent.Greenlet):
         levels = 'critical error warning info debug'.split()
         import random
         while self._keep_going:
-            loggers = list(self.loggers)
+            loggers = list(self.subscribed_loggers)
             if loggers:
-                config = {
+                logger_name = random.choice(list(self.loggers))
+                self.loggers[logger_name].update({
                     'level': random.choice(levels),
                     'propagate': random.choice([0,1]),
-                }
-                logger_name = random.choice(list(self.loggers))
-                #for logger_name in self.loggers:
-                print('configure {0} with: {1}'.format(logger_name, config))
-                topic = zerolog.config_prefix + logger_name
-                self.publisher.send_multipart([
-                    topic.encode('utf-8'),
-                    json.dumps(config)
-                ])
+                })
+                self.configure_logger(logger_name)
             gevent.sleep(5)
 
 
