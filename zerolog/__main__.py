@@ -28,6 +28,7 @@ class LogEmitter(gevent.Greenlet):
         self.levels = 'critical error warning info debug'.split()
         config = {
             'version': 1,
+            'disable_existing_loggers': False,
             'handlers': {
                 'zmq': {
                     'class': 'zerolog.ZerologHandler',
@@ -35,15 +36,9 @@ class LogEmitter(gevent.Greenlet):
                     'endpoint': endpoint,
                     'context': self.context,
                 },
-                'console': {
-                    'class': 'logging.StreamHandler',
-                    'level': 'DEBUG',
-                    'stream': 'ext://sys.stdout',
-                }
             },
             'root': {
                 'level': 'NOTSET',
-                #'handlers': ['console'],
                 'handlers': ['console', 'zmq'],
             },
         }
@@ -74,28 +69,6 @@ class ZerologEmitter(gevent.Greenlet):
         super(ZerologEmitter, self).__init__()
         self.interval = interval
         self._keep_going = True
-        config = {
-            'version': 1,
-             'formatters': {
-                'simple': {
-                    'format': '%(name)s %(levelname)-8s: %(message)s',
-                },
-            },
-            'handlers': {
-                'console': {
-                    'class': 'logging.StreamHandler',
-                    'level': 'NOTSET',
-                    'formatter': 'simple',
-                    'stream': 'ext://sys.stdout',
-                }
-            },
-            'root': {
-                'level': 'NOTSET',
-                'handlers': ['console'],
-            },
-        }
-        import logging.config
-        logging.config.dictConfig(config)
 
     def _run(self):
         #loggers = 'app app.sub app.sub.lib'.split()
@@ -127,28 +100,6 @@ class MultiZerologEmitter(gevent.Greenlet):
         self.loggers = 'foo foo.lib foo.lib.bar'.split()
         self.levels = 'critical error warning info debug'.split()
         self._keep_going = True
-        config = {
-            'version': 1,
-             'formatters': {
-                'simple': {
-                    'format': '%(name)-15s %(levelname)-8s: %(message)s',
-                },
-            },
-            'handlers': {
-                'console': {
-                    'class': 'logging.StreamHandler',
-                    'level': 'NOTSET',
-                    'formatter': 'simple',
-                    'stream': 'ext://sys.stdout',
-                }
-            },
-            'root': {
-                'level': 'NOTSET',
-                'handlers': ['console'],
-            },
-        }
-        import logging.config
-        logging.config.dictConfig(config)
 
     def _run(self):
         self.greenlets.add(gevent.spawn(self.__random_logger))
@@ -184,6 +135,30 @@ class MultiZerologEmitter(gevent.Greenlet):
 
 
 def main():
+    logging_config = {
+        'version': 1,
+         'formatters': {
+            'simple': {
+                'format': '[%(process)s] %(name)-15s %(levelname)-8s: %(message)s',
+            },
+        },
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+                'level': 'NOTSET',
+                'formatter': 'simple',
+                'stream': 'ext://sys.stdout',
+            }
+        },
+        'root': {
+            'level': 'NOTSET',
+            'handlers': ['console'],
+        },
+    }
+    import logging.config
+    logging.config.dictConfig(logging_config)
+
+
     from zerolog import default_endpoints as endpoints
 
     context = zmq.Context.instance()
@@ -206,9 +181,8 @@ def main():
             job = MultiZerologEmitter(interval)
     elif name == 'dispatch':
         from zerolog.server import Dispatcher
-        job = Dispatcher(endpoints, context=context)
+        job = Dispatcher({'endpoints': endpoints}, context=context)
     elif name == 'tail':
-        logging.basicConfig(level=logging.NOTSET, format='[%(process)s] %(name)-15s %(levelname)-8s: %(message)s', stream=sys.stderr)
         from zerolog.client import LogSubscriber
         job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:], context=context)
     else:
