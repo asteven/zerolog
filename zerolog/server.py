@@ -157,12 +157,14 @@ class Dispatcher(gevent.Greenlet):
 
     def configure_logger(self, logger_name):
         config = self.loggers[logger_name]
-        self.log.info('configure logger {0} with: {1}'.format(logger_name, config))
-        topic = zerolog.config_prefix + logger_name
-        self.publisher.send_multipart([
-            topic.encode('utf-8'),
-            json.dumps(config)
-        ])
+        # only configure if config contains more then just the 'subscribed' key
+        if len(config) > 1:
+            self.log.info('configure logger {0} with: {1}'.format(logger_name, config))
+            topic = zerolog.config_prefix + logger_name
+            self.publisher.send_multipart([
+                topic.encode('utf-8'),
+                json.dumps(config)
+            ])
 
     @property
     def subscribed_loggers(self):
