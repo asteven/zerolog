@@ -30,8 +30,8 @@ config_prefix = 'config.'
 
 # default endpoints
 default_endpoints = {
-    'collect': 'tcp://127.0.0.42:42231',
-    'publish': 'tcp://127.0.0.42:42232',
+    'collect': 'tcp://127.0.0.42:6661',
+    'publish': 'tcp://127.0.0.42:6662',
 }
 
 
@@ -86,7 +86,7 @@ class ZerologManager(logging.Manager):
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(self.endpoints['publish'])
         self.log = logging.getLogger('zerolog')
-
+        self.subscribed_loggers = []
         self.zerolog_handler = ZerologHandler(self.endpoints['collect'], context=self.context)
         #self.zerolog_handler = GreenZerologHandler(self.endpoints['collect'], context=self.context)
 
@@ -95,6 +95,7 @@ class ZerologManager(logging.Manager):
 
         self._keep_going = True
         gevent.spawn(self.__configure)
+        self.subscribe(self.log.name)
 
     def __configure(self):
         """Main loop listening for config changes from the zerolog server.
@@ -138,18 +139,17 @@ class ZerologManager(logging.Manager):
     def subscribe(self, name):
         """Subscribe to receive config updates for a logger.
         """
-        self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
+        if name not in self.subscribed_loggers:
+            self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
+            self.subscribed_loggers.append(name)
 
     def getLogger(self, name):
         """Get a logger instance and subscribe to the zerolog server for
         config updates for it.
         """
-        subscribe = (not name in self.loggerDict \
-            or isinstance(self.loggerDict[name], logging.PlaceHolder)
-        )
+        self.log.debug('{0}.getLogger({1})'.format(self.__class__.__name__, name))
         logger = super(ZerologManager, self).getLogger(name)
-        if subscribe:
-            self.subscribe(name)
+        self.subscribe(name)
         return logger
 
     def inherit(self, other_manager):

@@ -21,11 +21,12 @@ import zerolog
 
 
 config = {
-    'endpoints': {
-        'control': 'tcp://127.0.0.42:6660',
-        'collect': 'tcp://127.0.0.42:6661',
-        'publish': 'tcp://127.0.0.42:6662',
-    },
+#    'endpoints': {
+#        'control': 'tcp://127.0.0.42:6660',
+#        'collect': 'tcp://127.0.0.42:6661',
+#        'publish': 'tcp://127.0.0.42:6662',
+#    },
+    'endpoints': zerolog.default_endpoints,
     'logging': {
         'version': 1,
         'disable_existing_loggers': False,
@@ -133,12 +134,12 @@ class Dispatcher(gevent.Greenlet):
                 subscription = rc[1:]
                 status = rc[0] == "\x01"
                 if status:
-                    self.log.info('client subscribed to {}'.format(subscription))
+                    self.log.debug('client subscribed to {}'.format(subscription))
                     self.subscriptions.append(subscription)
                     if subscription.startswith(zerolog.config_prefix):
                         self.add_logger(subscription[len(zerolog.config_prefix):])
                 else:
-                    self.log.info('client unsubscribed from {}'.format(subscription))
+                    self.log.debug('client unsubscribed from {}'.format(subscription))
                     self.subscriptions.remove(subscription)
                     if subscription.startswith(zerolog.config_prefix):
                         self.remove_logger(subscription[len(zerolog.config_prefix):])
@@ -150,6 +151,7 @@ class Dispatcher(gevent.Greenlet):
             logger_config = self.config.get('logging', {}).get('loggers', {}).get(logger_name, {})
             self.loggers[logger_name] = logger_config
         self.loggers[logger_name]['subscribed'] = True
+        self.configure_logger(logger_name)
 
     def remove_logger(self, logger_name):
         if logger_name in self.loggers:
@@ -157,9 +159,9 @@ class Dispatcher(gevent.Greenlet):
 
     def configure_logger(self, logger_name):
         config = self.loggers[logger_name]
+        self.log.debug('configure logger {0} with: {1}'.format(logger_name, config))
         # only configure if config contains more then just the 'subscribed' key
         if len(config) > 1:
-            self.log.info('configure logger {0} with: {1}'.format(logger_name, config))
             topic = zerolog.config_prefix + logger_name
             self.publisher.send_multipart([
                 topic.encode('utf-8'),
@@ -169,7 +171,7 @@ class Dispatcher(gevent.Greenlet):
     @property
     def subscribed_loggers(self):
         for name,config in self.loggers.items():
-            if config['subscribed'] == True:
+            if name != 'zerolog' and config['subscribed'] == True:
                 yield name
 
     def __client_emulator(self):
@@ -179,8 +181,9 @@ class Dispatcher(gevent.Greenlet):
         import random
         while self._keep_going:
             loggers = list(self.subscribed_loggers)
+            self.log.info('subscribed loggers: {0}'.format(loggers))
             if loggers:
-                logger_name = random.choice(list(self.loggers))
+                logger_name = random.choice(list(loggers))
                 self.loggers[logger_name].update({
                     'level': random.choice(levels),
                     'propagate': random.choice([0,1]),

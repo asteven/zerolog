@@ -181,7 +181,8 @@ def main():
             job = MultiZerologEmitter(interval)
     elif name == 'dispatch':
         from zerolog.server import Dispatcher
-        job = Dispatcher({'endpoints': endpoints}, context=context)
+        from zerolog.server import config
+        job = Dispatcher(config, context=context)
     elif name == 'tail':
         from zerolog.client import LogSubscriber
         job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:], context=context)
