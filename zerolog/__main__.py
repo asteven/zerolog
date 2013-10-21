@@ -134,9 +134,35 @@ class MultiZerologEmitter(gevent.Greenlet):
         self.kill()
 
 
+class DebugZerologEmitter(gevent.Greenlet):
+    def __init__(self, interval):
+        super(DebugZerologEmitter, self).__init__()
+        self.interval = interval
+        self._keep_going = True
+
+    def _run(self):
+        #loggers = 'app app.sub app.sub.lib'.split()
+        levels = 'critical error warning info debug'.split()
+        logger = zerolog.getLogger('zerolog')
+        index = 0
+        while self._keep_going:
+            #logger = zerolog.getLogger(random.choice(loggers))
+            #logger.propagate = 0
+            level = random.choice(levels)
+            message = "{0} some {1} message".format(index, level)
+            getattr(logger, level)(message)
+            index += 1
+            gevent.sleep(self.interval)
+
+    def stop(self):
+        self._keep_going = False
+        self.kill()
+
+
 def main():
     logging_config = {
         'version': 1,
+        'disable_existing_loggers': False,
          'formatters': {
             'simple': {
                 'format': '[%(process)s] %(name)-15s %(levelname)-8s: %(message)s',
@@ -179,10 +205,12 @@ def main():
             job = ZerologEmitter(interval)
         elif name == 'multiemit':
             job = MultiZerologEmitter(interval)
+        elif name == 'debugemit':
+            job = DebugZerologEmitter(interval)
     elif name == 'dispatch':
         from zerolog.server import Dispatcher
         from zerolog.server import config
-        job = Dispatcher(config, context=context)
+        job = Dispatcher(config, context=context, quiet=True)
     elif name == 'tail':
         from zerolog.client import LogSubscriber
         job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:], context=context)

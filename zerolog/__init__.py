@@ -51,11 +51,11 @@ def configure(endpoints=None, context=None):
     This replaces the logging.Logger.manager by one that knows how to get
     logger configs from a zerolog server.
     """
-    logging.Logger.manager = ZerologManager(
-        logging.Logger.manager,
+    manager = ZerologManager(
         endpoints or default_endpoints,
         context=context
     )
+    manager.install()
 
 
 def getLogger(name=None):
@@ -78,9 +78,8 @@ def getLocalLogger(name=None):
 
 
 class ZerologManager(logging.Manager):
-    def __init__(self, manager, endpoints, context=None):
-        super(ZerologManager, self).__init__(manager.root)
-        self.inherit(manager)
+    def __init__(self, endpoints, context=None):
+        super(ZerologManager, self).__init__(logging.getLogger())
         self.endpoints = endpoints
         self.context = context or zmq.Context.instance()
         self.socket = self.context.socket(zmq.SUB)
@@ -95,7 +94,6 @@ class ZerologManager(logging.Manager):
 
         self._keep_going = True
         gevent.spawn(self.__configure)
-        self.subscribe(self.log.name)
 
     def __configure(self):
         """Main loop listening for config changes from the zerolog server.
@@ -111,7 +109,7 @@ class ZerologManager(logging.Manager):
             logger = self.getLogger(logger_name)
             if 'level' in config:
                 level = config['level'].upper()
-                self.log.info('setting loglevel of {0} to {1}'.format(logger_name, level))
+                self.log.debug('setting loglevel of {0} to {1}'.format(logger_name, level))
                 logger.setLevel(level)
             if 'propagate' in config:
                 propagate = config['propagate']
@@ -128,12 +126,12 @@ class ZerologManager(logging.Manager):
 
     def add_zerolog_handler(self, logger):
         if not self.zerolog_handler in logger.handlers:
-            self.log.info('adding zerolog handler to {0}'.format(logger.name))
+            self.log.debug('adding zerolog handler to {0}'.format(logger.name))
             logger.addHandler(self.zerolog_handler)
 
     def remove_zerolog_handler(self, logger):
         if self.zerolog_handler in logger.handlers:
-            self.log.info('removing zerolog handler from {0}'.format(logger.name))
+            self.log.debug('removing zerolog handler from {0}'.format(logger.name))
             logger.removeHandler(self.zerolog_handler)
 
     def subscribe(self, name):
@@ -147,10 +145,17 @@ class ZerologManager(logging.Manager):
         """Get a logger instance and subscribe to the zerolog server for
         config updates for it.
         """
-        self.log.debug('{0}.getLogger({1})'.format(self.__class__.__name__, name))
+        #self.log.debug('{0}.getLogger({1})'.format(self.__class__.__name__, name))
         logger = super(ZerologManager, self).getLogger(name)
         self.subscribe(name)
         return logger
+
+    def install(self):
+        """Install this manager as the global logging manager (logging.Logger.manager)
+        """
+        old_manager = logging.Logger.manager
+        logging.Logger.manager = self
+        self.inherit(old_manager)
 
     def inherit(self, other_manager):
         """Inherit attributes and logger instances from an other/existing
