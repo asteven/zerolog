@@ -88,8 +88,29 @@ logger.info('whatever')
 --------------------------------------------------------------------------------
 
 # @see http://zguide.zeromq.org/py:rtreq
+import zmq
+import json
+context = zmq.Context.instance()
 _socket = context.socket(zmq.REQ)
 _socket.connect('tcp://127.0.0.42:6660')
-_socket.send('update')
+
+_socket.send_multipart(['list'])
+reply = _socket.recv_json()
+print('{0!r}'.format(reply))
+
+_socket.send_multipart(['get', 'zerolog'])
 config = _socket.recv_json()
 print('{0!r}'.format(config))
+
+config['level'] = 'DEBUG'
+_socket.send_multipart(['set', 'zerolog', json.dumps(config)])
+config = _socket.recv_json()
+print('{0!r}'.format(config))
+
+config['level'] = 'ERROR'
+_socket.send_multipart(['set', 'zerolog', json.dumps(config)])
+config = _socket.recv_json()
+print('{0!r}'.format(config))
+
+--------------------------------------------------------------------------------
+
