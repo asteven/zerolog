@@ -111,13 +111,15 @@ class Dispatcher(gevent.Greenlet):
         self.publisher.bind(self.config['endpoints']['publish'])
         while self._keep_going:
             record_dict = self.channel.get()
-            topic = '.'.join((record_dict['name'], record_dict['levelname']))
-            topic = zerolog.stream_prefix + topic
+            topic = '{0}{1}.{2}'.format(
+                zerolog.stream_prefix,
+                record_dict['name'],
+                record_dict['levelname']
+            )
             if not self.quiet:
                 # inject log record into local logger
+                logger = zerolog.getLocalLogger(record_dict['name'])
                 record = logging.makeLogRecord(record_dict)
-                logger_name = topic.split('.')[0]
-                logger = zerolog.getLocalLogger(logger_name)
                 if logger.isEnabledFor(record.levelno):
                     logger.handle(record)
             self.publisher.send_multipart([
