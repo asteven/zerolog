@@ -30,6 +30,7 @@ config_prefix = 'config.'
 
 # default endpoints
 default_endpoints = {
+    'control': 'tcp://127.0.0.42:6660',
     'collect': 'tcp://127.0.0.42:6661',
     'publish': 'tcp://127.0.0.42:6662',
 }

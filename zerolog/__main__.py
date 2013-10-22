@@ -29,7 +29,18 @@ class LogEmitter(gevent.Greenlet):
         config = {
             'version': 1,
             'disable_existing_loggers': False,
+            'formatters': {
+                'simple': {
+                    'format': '[%(process)s] %(name)-15s %(levelname)-8s: %(message)s',
+                },
+            },
             'handlers': {
+                'console': {
+                    'class': 'logging.StreamHandler',
+                    'level': 'NOTSET',
+                    'formatter': 'simple',
+                    'stream': 'ext://sys.stdout',
+                },
                 'zmq': {
                     'class': 'zerolog.ZerologHandler',
                     'level': 'NOTSET',
@@ -163,7 +174,7 @@ def main():
     logging_config = {
         'version': 1,
         'disable_existing_loggers': False,
-         'formatters': {
+        'formatters': {
             'simple': {
                 'format': '[%(process)s] %(name)-15s %(levelname)-8s: %(message)s',
             },

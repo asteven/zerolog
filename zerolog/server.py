@@ -21,11 +21,6 @@ import zerolog
 
 
 config = {
-#    'endpoints': {
-#        'control': 'tcp://127.0.0.42:6660',
-#        'collect': 'tcp://127.0.0.42:6661',
-#        'publish': 'tcp://127.0.0.42:6662',
-#    },
     'endpoints': zerolog.default_endpoints,
     'logging': {
         'version': 1,
@@ -65,17 +60,18 @@ class Dispatcher(gevent.Greenlet):
         super(Dispatcher, self).__init__()
         self.config = config
         self.context = context or zmq.Context()
+        self.quiet = quiet
         self.greenlets = Group()
         self.channel = gevent.queue.Queue(0)
-        self._keep_going = True
-        self.quiet = quiet
         self.subscriptions = []
         self.loggers = {}
         self.log = logging.getLogger('zerolog')
+        self._keep_going = True
 
     def _run(self):
         self.greenlets.add(gevent.spawn(self.__collect))
         self.greenlets.add(gevent.spawn(self.__publish))
+        self.greenlets.add(gevent.spawn(self.__control))
         self.greenlets.add(gevent.spawn(self.__subscription_handler))
         self.greenlets.add(gevent.spawn(self.__client_emulator))
         self.greenlets.join()
@@ -128,6 +124,36 @@ class Dispatcher(gevent.Greenlet):
             gevent.sleep()
         if self.publisher:
             self.publisher.close()
+
+    def __control(self):
+        self.controller = self.context.socket(zmq.ROUTER)
+        self.controller.bind(self.config['endpoints']['control'])
+        while self._keep_going:
+            address = self.controller.recv()
+            empty = self.controller.recv()
+            request = self.controller.recv()
+            reply = {}
+            if request == 'list':
+                self.log.debug('received request: {0}'.format(request))
+                reply = self.loggers
+            else:
+                logger_name = self.controller.recv()
+                self.log.debug('received request: {0} {1}'.format(request, logger_name))
+                if request == 'set':
+                    logger_config = self.controller.recv_json()
+                    self.loggers[logger_name].update(logger_config)
+                    self.configure_logger(logger_name)
+                elif request == 'get':
+                    try:
+                        reply = self.loggers[logger_name]
+                    except KeyError as e:
+                        self.log.error('could not find config for requested logger: {0}'.format(str(e)))
+                        continue
+            self.controller.send(address, zmq.SNDMORE)
+            self.controller.send('', zmq.SNDMORE)
+            self.controller.send_json(reply)
+        if self.controller:
+            self.controller.close()
 
     def __subscription_handler(self):
         while self._keep_going:
