@@ -133,7 +133,9 @@ class Dispatcher(gevent.Greenlet):
             empty = self.controller.recv()
             request = self.controller.recv()
             reply = {}
-            if request == 'list':
+            if request == 'endpoints':
+                reply = self.config['endpoints']
+            elif request == 'list':
                 self.log.debug('received request: {0}'.format(request))
                 reply = self.loggers
             else:
