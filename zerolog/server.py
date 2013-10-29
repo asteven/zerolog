@@ -61,6 +61,7 @@ class Dispatcher(gevent.Greenlet):
         self.config = config
         self.context = context or zmq.Context()
         self.quiet = quiet
+        self.controller = Controller(self.config, context=self.context)
         self.greenlets = Group()
         self.channel = gevent.queue.Queue(0)
         self.subscriptions = []
@@ -71,9 +72,10 @@ class Dispatcher(gevent.Greenlet):
     def _run(self):
         self.greenlets.add(gevent.spawn(self.__collect))
         self.greenlets.add(gevent.spawn(self.__publish))
-        self.greenlets.add(gevent.spawn(self.__control))
         self.greenlets.add(gevent.spawn(self.__subscription_handler))
         self.greenlets.add(gevent.spawn(self.__client_emulator))
+        self.controller.start()
+        self.greenlets.add(self.controller)
         self.greenlets.join()
 
     def stop(self):
@@ -122,38 +124,6 @@ class Dispatcher(gevent.Greenlet):
             gevent.sleep()
         if self.publisher:
             self.publisher.close()
-
-    def __control(self):
-        self.controller = self.context.socket(zmq.ROUTER)
-        self.controller.bind(self.config['endpoints']['control'])
-        while self._keep_going:
-            address = self.controller.recv()
-            empty = self.controller.recv()
-            request = self.controller.recv()
-            reply = {}
-            if request == 'endpoints':
-                reply = self.config['endpoints']
-            elif request == 'list':
-                self.log.debug('received request: {0}'.format(request))
-                reply = self.loggers
-            else:
-                logger_name = self.controller.recv()
-                self.log.debug('received request: {0} {1}'.format(request, logger_name))
-                if request == 'set':
-                    logger_config = self.controller.recv_json()
-                    self.loggers[logger_name].update(logger_config)
-                    self.configure_logger(logger_name)
-                elif request == 'get':
-                    try:
-                        reply = self.loggers[logger_name]
-                    except KeyError as e:
-                        self.log.error('could not find config for requested logger: {0}'.format(str(e)))
-                        continue
-            self.controller.send(address, zmq.SNDMORE)
-            self.controller.send('', zmq.SNDMORE)
-            self.controller.send_json(reply)
-        if self.controller:
-            self.controller.close()
 
     def __subscription_handler(self):
         while self._keep_going:
@@ -220,37 +190,64 @@ class Dispatcher(gevent.Greenlet):
             gevent.sleep(5)
 
 
-class ConfigServer(gevent.Greenlet):
+class Controller(gevent.Greenlet):
     def __init__(self, config, context=None):
-        super(ConfigServer, self).__init__()
+        super(Controller, self).__init__()
         self.config = config
         self.context = context or zmq.Context()
-        self.greenlets = Group()
+        self.log = logging.getLogger('zerolog')
         self._keep_going = True
 
     def _run(self):
-        self.greenlets.add(gevent.spawn(self.__router))
-        self.greenlets.add(gevent.spawn(self.__publisher))
-        self.greenlets.join()
+        self.socket = self.context.socket(zmq.ROUTER)
+        self.socket.linger = 0
+        self.socket.bind(self.config['endpoints']['control'])
+        while self._keep_going:
+            #raw_message = self.controller.recv_multipart()
+            #client_id, message = raw_message
+            client_id = self.socket.recv()
+            message = None
+            try:
+                message = self.socket.recv_json()
+                reply = message
+            except ValueError as e:
+                reply = {'error': str(e)}
+            self.log.debug('client_id: {0}, message: {1}'.format(client_id, message))
+            self.socket.send(client_id, zmq.SNDMORE)
+            self.socket.send_json(reply)
+            continue
+
+            address = self.controller.recv()
+            empty = self.controller.recv()
+            request = self.controller.recv()
+            reply = {}
+            if request == 'endpoints':
+                reply = self.config['endpoints']
+            elif request == 'list':
+                self.log.debug('received request: {0}'.format(request))
+                reply = self.loggers
+            else:
+                logger_name = self.controller.recv()
+                self.log.debug('received request: {0} {1}'.format(request, logger_name))
+                if request == 'set':
+                    logger_config = self.controller.recv_json()
+                    self.loggers[logger_name].update(logger_config)
+                    self.configure_logger(logger_name)
+                elif request == 'get':
+                    try:
+                        reply = self.loggers[logger_name]
+                    except KeyError as e:
+                        self.log.error('could not find config for requested logger: {0}'.format(str(e)))
+                        continue
+            self.controller.send(client_id, zmq.SNDMORE)
+            self.controller.send('', zmq.SNDMORE)
+            self.controller.send_json(reply)
+        if self.socket:
+            self.socket.close()
 
     def stop(self):
         self._keep_going = False
-        self.greenlets.kill()
         self.kill()
-
-    def __router(self):
-        self.router = self.context.socket(zmq.ROUTER)
-        self.router.bind(self.config['endpoints']['control'])
-        while self._keep_going:
-            address = self.router.recv()
-            empty = self.router.recv()
-            request = self.router.recv()
-            print('received request: {0}'.format(request))
-            self.router.send(address, zmq.SNDMORE)
-            self.router.send('', zmq.SNDMORE)
-            self.router.send_json(config)
-        if self.router:
-            self.router.close()
 
 
 def parse_args(argv):
