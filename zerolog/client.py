@@ -34,13 +34,13 @@ class LogSubscriber(gevent.Greenlet):
             self.socket.setsockopt(zmq.SUBSCRIBE, zerolog.stream_prefix + topic)
         self.socket.connect(self.uri)
         while self._keep_going:
-            topic, message = self.socket.recv_multipart()
+            topic,record_json = self.socket.recv_multipart()
             name_and_level = topic[len(zerolog.stream_prefix):]
             logger_name,level_name = name_and_level.split(':')
             logger = zerolog.getLocalLogger(logger_name)
             if logger.isEnabledFor(logging.getLevelName(level_name)):
                 # inject log record into local logger
-                record_dict = json.loads(message)
+                record_dict = json.loads(record_json)
                 record = logging.makeLogRecord(record_dict)
                 logger.handle(record)
         self.socket.close()
