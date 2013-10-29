@@ -219,9 +219,9 @@ def main():
         elif name == 'debugemit':
             job = DebugZerologEmitter(interval)
     elif name == 'dispatch':
-        from zerolog.server import Dispatcher
+        from zerolog.server import Server
         from zerolog.server import config
-        job = Dispatcher(config, context=context, quiet=True)
+        job = Server(config, context=context, quiet=True)
     elif name == 'tail':
         from zerolog.client import LogSubscriber
         job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:], context=context)

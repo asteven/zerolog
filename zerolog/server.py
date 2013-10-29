@@ -9,6 +9,7 @@
 import sys
 import argparse
 import logging
+import time
 
 import gevent
 import gevent.queue
@@ -45,7 +46,7 @@ config = {
         },
         'loggers': {
             'zerolog': {
-                'level': 'ERROR',
+                'level': 'DEBUG',
             },
             'example': {
                 'level': 'INFO',
@@ -54,28 +55,19 @@ config = {
     },
 }
 
-
 class Dispatcher(gevent.Greenlet):
-    def __init__(self, config, context=None, quiet=False):
+    def __init__(self, collector, publisher, quiet=False):
         super(Dispatcher, self).__init__()
-        self.config = config
-        self.context = context or zmq.Context()
+        self.collector = collector
+        self.publisher = publisher
         self.quiet = quiet
-        self.controller = Controller(self.config, context=self.context)
         self.greenlets = Group()
         self.channel = gevent.queue.Queue(0)
-        self.subscriptions = []
-        self.loggers = {}
-        self.log = logging.getLogger('zerolog')
         self._keep_going = True
 
     def _run(self):
-        self.greenlets.add(gevent.spawn(self.__collect))
-        self.greenlets.add(gevent.spawn(self.__publish))
-        self.greenlets.add(gevent.spawn(self.__subscription_handler))
-        self.greenlets.add(gevent.spawn(self.__client_emulator))
-        self.controller.start()
-        self.greenlets.add(self.controller)
+        self.greenlets.spawn(self.__collect)
+        self.greenlets.spawn(self.__publish)
         self.greenlets.join()
 
     def stop(self):
@@ -84,29 +76,12 @@ class Dispatcher(gevent.Greenlet):
         self.kill()
 
     def __collect(self):
-        # FIXME: have to decide if this should be a PULL or a SUB socket.
-        # using SUB let's the emitter use PUB which doesn't block if HWM is
-        # reached
-        self.collector = self.context.socket(zmq.SUB)
-        self.collector.setsockopt(zmq.SUBSCRIBE, '')
-        # then again using PULL / PUSH does block, which may be better to notice
-        # that there is a problem
-        #self.collector = self.context.socket(zmq.PULL)
-
-        self.collector.bind(self.config['endpoints']['collect'])
         while self._keep_going:
             message = self.collector.recv_multipart()
             self.channel.put(message)
             gevent.sleep()
-        if self.collector:
-            self.collector.close()
 
     def __publish(self):
-        self.publisher = self.context.socket(zmq.XPUB)
-        self.publisher.hwm = 100000
-        # linger: if socket is closed, try sending remaining messages for 1000 milliseconds, then give up
-        self.publisher.linger = 1000
-        self.publisher.bind(self.config['endpoints']['publish'])
         while self._keep_going:
             message = self.channel.get()
             if not self.quiet:
@@ -122,13 +97,61 @@ class Dispatcher(gevent.Greenlet):
                     logger.handle(record)
             self.publisher.send_multipart(message)
             gevent.sleep()
-        if self.publisher:
-            self.publisher.close()
+
+
+class Server(gevent.Greenlet):
+    def __init__(self, config, context=None, quiet=False):
+        super(Server, self).__init__()
+        self.config = config
+        self.context = context or zmq.Context()
+        self.quiet = quiet
+
+        # dict of the zeromq sockets we use
+        self.sockets = {}
+
+        _collect = self.context.socket(zmq.SUB)
+        _collect.setsockopt(zmq.SUBSCRIBE, '')
+        _collect.bind(self.config['endpoints']['collect'])
+        self.sockets['collect'] = _collect
+
+        _publish = self.context.socket(zmq.XPUB)
+        _publish.hwm = 100000
+        _publish.linger = 1000
+        _publish.bind(self.config['endpoints']['publish'])
+        self.sockets['publish'] = _publish
+
+        _control = self.context.socket(zmq.ROUTER)
+        _control.linger = 0
+        _control.bind(self.config['endpoints']['control'])
+        self.sockets['control'] = _control
+
+        self.dispatcher = Dispatcher(self.sockets['collect'], self.sockets['publish'], quiet=self.quiet)
+        self.controller = Controller(self.sockets['control'], self)
+
+        self.greenlets = Group()
+        self.subscriptions = []
+        self.loggers = {}
+        self.log = logging.getLogger('zerolog')
+        self._keep_going = True
+
+    def _run(self):
+        self.greenlets.start(self.dispatcher)
+        self.greenlets.start(self.controller)
+        self.greenlets.add(gevent.spawn(self.__subscription_handler))
+        self.greenlets.add(gevent.spawn(self.__client_emulator))
+        self.greenlets.join()
+
+    def stop(self):
+        self._keep_going = False
+        self.greenlets.kill()
+        for _socket in self.sockets.values():
+            _socket.close()
+        self.kill()
 
     def __subscription_handler(self):
         while self._keep_going:
             try:
-                rc = self.publisher.recv()
+                rc = self.sockets['publish'].recv()
                 subscription = rc[1:]
                 status = rc[0] == "\x01"
                 if status:
@@ -191,63 +214,83 @@ class Dispatcher(gevent.Greenlet):
 
 
 class Controller(gevent.Greenlet):
-    def __init__(self, config, context=None):
+    def __init__(self, control_socket, handler):
         super(Controller, self).__init__()
-        self.config = config
-        self.context = context or zmq.Context()
+        self.socket = control_socket
+        self.handler = handler
         self.log = logging.getLogger('zerolog')
         self._keep_going = True
 
-    def _run(self):
-        self.socket = self.context.socket(zmq.ROUTER)
-        self.socket.linger = 0
-        self.socket.bind(self.config['endpoints']['control'])
-        while self._keep_going:
-            #raw_message = self.controller.recv_multipart()
-            #client_id, message = raw_message
-            client_id = self.socket.recv()
-            message = None
-            try:
-                message = self.socket.recv_json()
-                reply = message
-            except ValueError as e:
-                reply = {'error': str(e)}
-            self.log.debug('client_id: {0}, message: {1}'.format(client_id, message))
-            self.socket.send(client_id, zmq.SNDMORE)
-            self.socket.send_json(reply)
-            continue
+    def send_error(self, mid, cid, reason='unknown', tb=None):
+        response = {
+            'status': 'error',
+            'reason': reason,
+            'tb': tb,
+            'time': time.time(),
+        }
+        self.send_message(mid, cid, response)
 
-            address = self.controller.recv()
-            empty = self.controller.recv()
-            request = self.controller.recv()
-            reply = {}
-            if request == 'endpoints':
-                reply = self.config['endpoints']
-            elif request == 'list':
-                self.log.debug('received request: {0}'.format(request))
-                reply = self.loggers
-            else:
-                logger_name = self.controller.recv()
-                self.log.debug('received request: {0} {1}'.format(request, logger_name))
-                if request == 'set':
-                    logger_config = self.controller.recv_json()
-                    self.loggers[logger_name].update(logger_config)
-                    self.configure_logger(logger_name)
-                elif request == 'get':
-                    try:
-                        reply = self.loggers[logger_name]
-                    except KeyError as e:
-                        self.log.error('could not find config for requested logger: {0}'.format(str(e)))
-                        continue
-            self.controller.send(client_id, zmq.SNDMORE)
-            self.controller.send('', zmq.SNDMORE)
-            self.controller.send_json(reply)
+    def send_response(self, mid, cid, message):
+        response = {
+            'status': 'ok',
+            'time': time.time(),
+        }
+        response.update(message)
+        self.send_message(mid, cid, response)
+
+    def send_message(self, mid, cid, message):
+        self.log.debug('send_message: mid: {0}, cid: {1}, message: {2}'.format(mid, cid, message))
+        message['id'] = mid
+        try:
+            self.socket.send(cid, zmq.SNDMORE)
+            self.socket.send_json(message)
+        except (ValueError, zmq.ZMQError) as e:
+            self.log.error('Failed to send message to {0}: {1}'.format(cid, message))
+
+    def _run(self):
+        while self._keep_going:
+            client_id = self.socket.recv()
+            try:
+                request = self.socket.recv_json()
+                message_id = request['id']
+                # TODO: see netboot/tftp/server.py TftpListener for how to dispatch to handler
+                response = request
+                self.send_response(message_id, client_id, response)
+            except (ValueError, zmq.ZMQError) as e:
+                self.send_error(mid, cid, str(e))
         if self.socket:
             self.socket.close()
 
     def stop(self):
         self._keep_going = False
         self.kill()
+
+    def foo(self):
+        address = self.controller.recv()
+        empty = self.controller.recv()
+        request = self.controller.recv()
+        reply = {}
+        if request == 'endpoints':
+            reply = self.config['endpoints']
+        elif request == 'list':
+            self.log.debug('received request: {0}'.format(request))
+            reply = self.loggers
+        else:
+            logger_name = self.controller.recv()
+            self.log.debug('received request: {0} {1}'.format(request, logger_name))
+            if request == 'set':
+                logger_config = self.controller.recv_json()
+                self.loggers[logger_name].update(logger_config)
+                self.configure_logger(logger_name)
+            elif request == 'get':
+                try:
+                    reply = self.loggers[logger_name]
+                except KeyError as e:
+                    self.log.error('could not find config for requested logger: {0}'.format(str(e)))
+        self.controller.send(client_id, zmq.SNDMORE)
+        self.controller.send('', zmq.SNDMORE)
+        self.controller.send_json(reply)
+
 
 
 def parse_args(argv):
@@ -290,15 +333,14 @@ def main(argv=sys.argv[1:]):
     #    config = json.load(fd)
     jobs = Group()
     try:
-        jobs.start(Dispatcher(config, context=context, quiet=args.quiet))
-        jobs.start(ConfigServer(config, context=context))
+        jobs.start(Server(config, context=context, quiet=args.quiet))
         jobs.join()
     except KeyboardInterrupt:
         jobs.kill()
 
 
 def foo():
-    job = Dispatcher(config, context=context, quiet=args.quiet)
+    job = Server(config, context=context, quiet=args.quiet)
     try:
         job.start()
         job.join()
