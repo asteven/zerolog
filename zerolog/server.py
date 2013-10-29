@@ -7,7 +7,6 @@
 """
 
 import sys
-import json
 import argparse
 import logging
 
@@ -16,6 +15,7 @@ import gevent.queue
 from gevent.pool import Group
 
 import zmq.green as zmq
+from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
 

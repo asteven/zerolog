@@ -1,7 +1,6 @@
 # encoding: utf-8
 
 import os
-import json
 import socket
 import logging
 
@@ -9,6 +8,7 @@ import gevent
 import gevent.queue
 
 import zmq.green as zmq
+from zmq.utils.jsonapi import jsonmod as json
 
 from . import compat
 
