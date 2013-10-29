@@ -217,11 +217,11 @@ class ZerologHandler(logging.Handler):
             self.handleError(record)
 
     def __send(self, record):
-        message = record.__dict__
+        record_dict = record.__dict__
         # add hostname to record
-        message['hostname'] = self.hostname
+        record_dict['hostname'] = self.hostname
         try:
-            self.socket.send_json(message)
+            self.socket.send_json(record_dict)
         except:
             self.handleError(record)
 
@@ -280,10 +280,10 @@ class GreenZerologHandler(logging.Handler):
     def __send(self):
         while True:
             record = self.channel.get()
-            message = record.__dict__
+            record_dict = record.__dict__
             # add hostname to record
-            message['hostname'] = self.hostname
+            record_dict['hostname'] = self.hostname
             try:
-                self.socket.send_json(message)
+                self.socket.send_json(record_dict)
             except:
                 self.handleError(record)
