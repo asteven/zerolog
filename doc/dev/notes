@@ -91,7 +91,7 @@ logger.info('whatever')
 import zmq
 import json
 context = zmq.Context.instance()
-_socket = context.socket(zmq.REQ)
+_socket = context.socket(zmq.DEALER)
 _socket.connect('tcp://127.0.0.42:6660')
 
 _socket.send_multipart(['list'])
