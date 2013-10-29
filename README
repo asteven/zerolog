@@ -1,6 +1,41 @@
-- collect log messages from multiple processes
-- publish log messages to registered subscribers
-- manage and distribute configuration for multiple loggers in multiple processes
+## zerolog
+- collects log messages from loggers
+- publishes configuration to loggers
+- publishes log messages to subscribed clients
+
+
+ +-----------+                         +-----------+  +-----------+
+ | logger-1  |                         | logger-2  |  | logger-n  |
+ +-----------+                         +-----------+  +-----------+
+ | pub | sub |                         | pub | sub |  | pub | sub |
+ +-----------+                         +-----------+  +-----------+
+    |     |                               |     |
+    |     |                               |     |
+    |     +----< config <----+            |     |
+    |                        |            |     |
+    |                  +-----|--< logs <--+     |
+    +----> logs >----+ |     |                  |
+                     | |     |                  |
+                     | |     | +---> config >---+
+                     | |     | |
+                     | |     | |
+     +------------+--+-+-----+-+--+
+     | zerolog    |  sub  |  pub  |
+     +------------+----------+-+--+
+                             | |
+                             | |
+    +--------< logs <--------+ |
+    |                          |
+    |               +-< logs <-+
+    |               |
+    |               |
+ +-----------+   +-----------+   +-----------+
+ | sub |     |   | sub |     |   | sub |     |
+ +-----------+   +-----------+   +-----------+
+ | client-1  |   | client-2  |   | client-n  |
+ +-----------+   +-----------+   +-----------+
+
+
 
 --------------------------------------------------------------------------------
 
