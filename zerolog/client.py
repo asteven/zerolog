@@ -35,7 +35,6 @@ class LogSubscriber(gevent.Greenlet):
         self.socket.connect(self.uri)
         while self._keep_going:
             topic, message = self.socket.recv_multipart()
-            name_and_level = topic[len(zerolog.stream_prefix):]
             record_dict = json.loads(message)
             #print('topic: {0}'.format(topic))
             #import pprint
@@ -43,8 +42,7 @@ class LogSubscriber(gevent.Greenlet):
 
             # inject log record into local logger
             record = logging.makeLogRecord(record_dict)
-            logger_name = name_and_level.split('.')[0]
-            logger = zerolog.getLocalLogger(logger_name)
+            logger = zerolog.getLocalLogger(record_dict['name'])
             if logger.isEnabledFor(record.levelno):
                 logger.handle(record)
         self.socket.close()
