@@ -93,8 +93,8 @@ class Dispatcher(gevent.Greenlet):
 
         self.collector.bind(self.config['endpoints']['collect'])
         while self._keep_going:
-            record_dict = self.collector.recv_json()
-            self.channel.put(record_dict)
+            message = self.collector.recv_multipart()
+            self.channel.put(message)
             gevent.sleep()
         if self.collector:
             self.collector.close()
@@ -106,21 +106,16 @@ class Dispatcher(gevent.Greenlet):
         self.publisher.linger = 1000
         self.publisher.bind(self.config['endpoints']['publish'])
         while self._keep_going:
-            record_dict = self.channel.get()
-            topic = '{0}{1}.{2}'.format(
-                zerolog.stream_prefix,
-                record_dict['name'],
-                record_dict['levelname']
-            )
+            message = self.channel.get()
             if not self.quiet:
                 # inject log record into local logger
+                # message is assumed to be a tuple of: (topic, record_json)
+                record_dict = json.loads(message[1])
                 logger = zerolog.getLocalLogger(record_dict['name'])
                 record = logging.makeLogRecord(record_dict)
                 if logger.isEnabledFor(record.levelno):
                     logger.handle(record)
-            self.publisher.send_multipart([
-                topic.encode('utf-8'),
-                json.dumps(record_dict)])
+            self.publisher.send_multipart(message)
             gevent.sleep()
         if self.publisher:
             self.publisher.close()

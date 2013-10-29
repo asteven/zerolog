@@ -221,7 +221,15 @@ class ZerologHandler(logging.Handler):
         # add hostname to record
         record_dict['hostname'] = self.hostname
         try:
-            self.socket.send_json(record_dict)
+            topic = '{0}{1}.{2}'.format(
+                stream_prefix,
+                record_dict['name'],
+                record_dict['levelname']
+            )
+            self.socket.send_multipart([
+                topic.encode('utf-8'),
+                json.dumps(record_dict)
+            ])
         except:
             self.handleError(record)
 
@@ -284,6 +292,14 @@ class GreenZerologHandler(logging.Handler):
             # add hostname to record
             record_dict['hostname'] = self.hostname
             try:
-                self.socket.send_json(record_dict)
+                topic = '{0}{1}.{2}'.format(
+                    stream_prefix,
+                    record_dict['name'],
+                    record_dict['levelname']
+                )
+                self.socket.send_multipart([
+                    topic.encode('utf-8'),
+                    json.dumps(record_dict)
+                ])
             except:
                 self.handleError(record)
