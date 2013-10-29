@@ -221,7 +221,7 @@ class ZerologHandler(logging.Handler):
         # add hostname to record
         record_dict['hostname'] = self.hostname
         try:
-            topic = '{0}{1}.{2}'.format(
+            topic = '{0}{1}:{2}'.format(
                 stream_prefix,
                 record_dict['name'],
                 record_dict['levelname']
@@ -292,7 +292,7 @@ class GreenZerologHandler(logging.Handler):
             # add hostname to record
             record_dict['hostname'] = self.hostname
             try:
-                topic = '{0}{1}.{2}'.format(
+                topic = '{0}{1}:{2}'.format(
                     stream_prefix,
                     record_dict['name'],
                     record_dict['levelname']

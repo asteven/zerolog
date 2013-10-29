@@ -23,7 +23,7 @@ class LogSubscriber(gevent.Greenlet):
         self.topics = topics or ['']
         self.context = context or zmq.Context()
         self.log_level_name = log_level_name
-        self.log_level = getattr(logging, self.log_level_name.upper())
+        self.log_level = logging.getLevelName(self.log_level_name.upper())
         self._keep_going = True
 
     def _run(self):
@@ -35,15 +35,13 @@ class LogSubscriber(gevent.Greenlet):
         self.socket.connect(self.uri)
         while self._keep_going:
             topic, message = self.socket.recv_multipart()
-            record_dict = json.loads(message)
-            #print('topic: {0}'.format(topic))
-            #import pprint
-            #pprint.pprint(record_dict)
-
-            # inject log record into local logger
-            record = logging.makeLogRecord(record_dict)
-            logger = zerolog.getLocalLogger(record_dict['name'])
-            if logger.isEnabledFor(record.levelno):
+            name_and_level = topic[len(zerolog.stream_prefix):]
+            logger_name,level_name = name_and_level.split(':')
+            logger = zerolog.getLocalLogger(logger_name)
+            if logger.isEnabledFor(logging.getLevelName(level_name)):
+                # inject log record into local logger
+                record_dict = json.loads(message)
+                record = logging.makeLogRecord(record_dict)
                 logger.handle(record)
         self.socket.close()
 
