@@ -125,19 +125,18 @@ class Server(gevent.Greenlet):
         _control.bind(self.config['endpoints']['control'])
         self.sockets['control'] = _control
 
-        self.dispatcher = Dispatcher(self.sockets['collect'], self.sockets['publish'], quiet=self.quiet)
+        self.manager = ConfigManager(self.sockets['publish'], self.config)
         self.controller = Controller(self.sockets['control'], self)
+        self.dispatcher = Dispatcher(self.sockets['collect'], self.sockets['publish'], quiet=self.quiet)
 
         self.greenlets = Group()
-        self.subscriptions = []
-        self.loggers = {}
         self.log = logging.getLogger('zerolog')
         self._keep_going = True
 
     def _run(self):
-        self.greenlets.start(self.dispatcher)
+        self.greenlets.start(self.manager)
         self.greenlets.start(self.controller)
-        self.greenlets.add(gevent.spawn(self.__subscription_handler))
+        self.greenlets.start(self.dispatcher)
         self.greenlets.add(gevent.spawn(self.__client_emulator))
         self.greenlets.join()
 
@@ -148,43 +147,93 @@ class Server(gevent.Greenlet):
             _socket.close()
         super(Server, self).kill(exception=exception, **kwargs)
 
-    def __subscription_handler(self):
+    def __client_emulator(self):
+        """Emulate a tool/sysadmin changing log levels.
+        """
+        levels = 'critical error warning info debug'.split()
+        import random
+        while self._keep_going:
+            loggers = list(self.manager.subscribed_loggers)
+            self.log.info('subscribed loggers: {0}'.format(loggers))
+            if loggers:
+                logger_name = random.choice(list(loggers))
+                self.manager.update(logger_name, {
+                    'level': random.choice(levels),
+                    'propagate': random.choice([0,1]),
+                })
+                self.manager.configure(logger_name)
+            gevent.sleep(5)
+
+
+class ConfigManager(gevent.Greenlet):
+    def __init__(self, publish_socket, config):
+        super(ConfigManager, self).__init__()
+        self.socket = publish_socket
+        self.config = config
+        self.subscriptions = []
+        self.loggers = {}
+        self.log = logging.getLogger('zerolog')
+        self._keep_going = True
+
+    def _run(self):
         while self._keep_going:
             try:
-                rc = self.sockets['publish'].recv()
+                rc = self.socket.recv()
                 subscription = rc[1:]
                 status = rc[0] == "\x01"
                 if status:
                     self.log.debug('client subscribed to {}'.format(subscription))
                     self.subscriptions.append(subscription)
                     if subscription.startswith(zerolog.config_prefix):
-                        self.add_logger(subscription[len(zerolog.config_prefix):])
+                        self.add(subscription[len(zerolog.config_prefix):])
                 else:
                     self.log.debug('client unsubscribed from {}'.format(subscription))
                     self.subscriptions.remove(subscription)
                     if subscription.startswith(zerolog.config_prefix):
-                        self.remove_logger(subscription[len(zerolog.config_prefix):])
+                        self.remove(subscription[len(zerolog.config_prefix):])
             except zmq.ZMQError as e:
-                print('{0}'.format(e))
+                self.log.error('{0}'.format(e))
 
-    def add_logger(self, logger_name):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
+        self._keep_going = False
+        super(ConfigManager, self).kill(exception=exception, **kwargs)
+
+    def add(self, logger_name):
+        """Add a logger to the manager and mark it as subscribed.
+        """
         if not logger_name in self.loggers:
             logger_config = self.config.get('logging', {}).get('loggers', {}).get(logger_name, {})
             self.loggers[logger_name] = logger_config
         self.loggers[logger_name]['subscribed'] = True
-        self.configure_logger(logger_name)
+        self.configure(logger_name)
 
-    def remove_logger(self, logger_name):
+    def remove(self, logger_name):
+        """Mark a logger as unsubscribed.
+        """
         if logger_name in self.loggers:
             self.loggers[logger_name]['subscribed'] = False
 
-    def configure_logger(self, logger_name):
-        config = self.loggers[logger_name]
+    def update(self, logger_name, logger_config):
+        """Update the given loggers configuration.
+        """
+        if logger_name in self.loggers:
+            self.loggers[logger_name].update(logger_config)
+            self.configure(logger_name)
+
+    def get(self, logger_name):
+        """Get the given loggers configuration.
+        """
+        return self.loggers.get(logger_name, {})
+
+    def configure(self, logger_name):
+        """Publish the current configuration to the given named logger.
+        """
+        config = self.get(logger_name)
         self.log.debug('configure logger {0} with: {1}'.format(logger_name, config))
         # only configure if config contains more then just the 'subscribed' key
-        if len(config) > 1:
+        if config.get('subscribed', False) and len(config) > 1:
             topic = zerolog.config_prefix + logger_name
-            self.publisher.send_multipart([
+            self.socket.send_multipart([
                 topic.encode('utf-8'),
                 json.dumps(config)
             ])
@@ -194,23 +243,6 @@ class Server(gevent.Greenlet):
         for name,config in self.loggers.items():
             if name != 'zerolog' and config['subscribed'] == True:
                 yield name
-
-    def __client_emulator(self):
-        """Emulate a tool/sysadmin changing log levels.
-        """
-        levels = 'critical error warning info debug'.split()
-        import random
-        while self._keep_going:
-            loggers = list(self.subscribed_loggers)
-            self.log.info('subscribed loggers: {0}'.format(loggers))
-            if loggers:
-                logger_name = random.choice(list(loggers))
-                self.loggers[logger_name].update({
-                    'level': random.choice(levels),
-                    'propagate': random.choice([0,1]),
-                })
-                self.configure_logger(logger_name)
-            gevent.sleep(5)
 
 
 class Controller(gevent.Greenlet):
@@ -281,7 +313,7 @@ class Controller(gevent.Greenlet):
             if request == 'set':
                 logger_config = self.controller.recv_json()
                 self.loggers[logger_name].update(logger_config)
-                self.configure_logger(logger_name)
+                self.configure(logger_name)
             elif request == 'get':
                 try:
                     reply = self.loggers[logger_name]
