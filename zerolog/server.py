@@ -70,10 +70,10 @@ class Dispatcher(gevent.Greenlet):
         self.greenlets.spawn(self.__publish)
         self.greenlets.join()
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
         self.greenlets.kill()
-        self.kill()
+        super(Dispatcher, self).kill(exception=exception, **kwargs)
 
     def __collect(self):
         while self._keep_going:
@@ -141,12 +141,12 @@ class Server(gevent.Greenlet):
         self.greenlets.add(gevent.spawn(self.__client_emulator))
         self.greenlets.join()
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
         self.greenlets.kill()
         for _socket in self.sockets.values():
             _socket.close()
-        self.kill()
+        super(Server, self).kill(exception=exception, **kwargs)
 
     def __subscription_handler(self):
         while self._keep_going:
@@ -261,9 +261,9 @@ class Controller(gevent.Greenlet):
         if self.socket:
             self.socket.close()
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
-        self.kill()
+        super(Controller, self).kill(exception=exception, **kwargs)
 
     def foo(self):
         address = self.controller.recv()
@@ -345,7 +345,7 @@ def foo():
         job.start()
         job.join()
     except KeyboardInterrupt:
-        job.stop()
+        job.kill()
 
 
 if __name__ == '__main__':

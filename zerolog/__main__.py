@@ -67,9 +67,9 @@ class LogEmitter(gevent.Greenlet):
             index += 1
             gevent.sleep(self.interval)
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
-        self.kill()
+        super(LogEmitter, self).kill(exception=exception, **kwargs)
 
 
 import zerolog
@@ -95,9 +95,9 @@ class ZerologEmitter(gevent.Greenlet):
             index += 1
             gevent.sleep(self.interval)
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
-        self.kill()
+        super(ZerologEmitter, self).kill(exception=exception, **kwargs)
 
 
 class MultiZerologEmitter(gevent.Greenlet):
@@ -139,10 +139,10 @@ class MultiZerologEmitter(gevent.Greenlet):
             index += 1
             gevent.sleep(self.interval)
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
         self.greenlets.kill()
-        self.kill()
+        super(MultiZerologEmitter, self).kill(exception=exception, **kwargs)
 
 
 class DebugZerologEmitter(gevent.Greenlet):
@@ -165,9 +165,9 @@ class DebugZerologEmitter(gevent.Greenlet):
             index += 1
             gevent.sleep(self.interval)
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
-        self.kill()
+        super(DebugZerologEmitter, self).kill(exception=exception, **kwargs)
 
 
 def main():
@@ -233,7 +233,7 @@ def main():
         job.start()
         job.join()
     except KeyboardInterrupt:
-        job.stop()
+        job.kill()
 
 
 if __name__ == '__main__':

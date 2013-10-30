@@ -45,9 +45,9 @@ class LogSubscriber(gevent.Greenlet):
                 logger.handle(record)
         self.socket.close()
 
-    def stop(self):
+    def kill(self, exception=gevent.GreenletExit, **kwargs):
         self._keep_going = False
-        self.kill()
+        super(LogSubscriber, self).kill(exception=exception, **kwargs)
 
 
 def parse_args(argv):
@@ -92,7 +92,7 @@ def main(argv=sys.argv[1:]):
         job.start()
         job.join()
     except KeyboardInterrupt:
-        job.stop()
+        job.kill()
 
 
 if __name__ == '__main__':
