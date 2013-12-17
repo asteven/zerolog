@@ -94,6 +94,26 @@ context = zmq.Context.instance()
 _socket = context.socket(zmq.DEALER)
 _socket.connect('tcp://127.0.0.42:6660')
 
+request = { 'id': 'foobar', 'command': 'list'}
+_socket.send_json(request)
+response = _socket.recv_json()
+print('{0!r}'.format(response))
+
+request = { 'id': 'foobar', 'command': 'get', 'args': {'name': 'zerolog'}}
+_socket.send_json(request)
+response = _socket.recv_json()
+print('{0!r}'.format(response))
+
+request = { 'id': 'foobar', 'command': 'set', 'args': {'name': '__main__', 'config': {'level': 'ERROR'}}}
+_socket.send_json(request)
+response = _socket.recv_json()
+print('{0!r}'.format(response))
+
+
+
+
+--------------------------------------------------------------------------------
+
 _socket.send_multipart(['list'])
 reply = _socket.recv_json()
 print('{0!r}'.format(reply))
