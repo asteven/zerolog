@@ -55,6 +55,7 @@ config = {
     },
 }
 
+
 class Dispatcher(gevent.Greenlet):
     def __init__(self, collector, publisher, quiet=False):
         super(Dispatcher, self).__init__()
@@ -137,7 +138,7 @@ class Server(gevent.Greenlet):
         self.greenlets.start(self.manager)
         self.greenlets.start(self.controller)
         self.greenlets.start(self.dispatcher)
-        self.greenlets.add(gevent.spawn(self.__client_emulator))
+        #self.greenlets.add(gevent.spawn(self.__client_emulator))
         self.greenlets.join()
 
     def kill(self, exception=gevent.GreenletExit, **kwargs):
@@ -146,6 +147,24 @@ class Server(gevent.Greenlet):
         for _socket in self.sockets.values():
             _socket.close()
         super(Server, self).kill(exception=exception, **kwargs)
+
+    def handle_list(self, client_id, message_id, request):
+        return self.manager.loggers
+
+    def handle_get(self, client_id, message_id, request):
+        name = request.get('args', {}).get('name', None)
+        config = self.manager.get(name)
+        return config
+
+    def handle_set(self, client_id, message_id, request):
+        name = request.get('args', {}).get('name', None)
+        config = request.get('args', {}).get('config', None)
+        return self.manager.set(name, config)
+
+    def handle_update(self, client_id, message_id, request):
+        name = request.get('args', {}).get('name', None)
+        config = request.get('args', {}).get('config', None)
+        return self.manager.update(name, config)
 
     def __client_emulator(self):
         """Emulate a tool/sysadmin changing log levels.
@@ -225,6 +244,14 @@ class ConfigManager(gevent.Greenlet):
         """
         return self.loggers.get(logger_name, {})
 
+    def set(self, logger_name, logger_config):
+        """Set the given loggers configuration.
+        """
+        subscribed = self.get(logger_name).get('subscribed', False)
+        self.loggers[logger_name] = logger_config
+        self.loggers[logger_name]['subscribed'] = subscribed
+        self.configure(logger_name)
+
     def configure(self, logger_name):
         """Publish the current configuration to the given named logger.
         """
@@ -253,25 +280,25 @@ class Controller(gevent.Greenlet):
         self.log = logging.getLogger('zerolog')
         self._keep_going = True
 
-    def send_error(self, mid, cid, reason='unknown', tb=None):
-        response = {
+    def send_error(self, cid, mid, reason='unknown', tb=None):
+        message = {
             'status': 'error',
             'reason': reason,
             'tb': tb,
             'time': time.time(),
         }
-        self.send_message(mid, cid, response)
+        self.send_message(cid, mid, message)
 
-    def send_response(self, mid, cid, message):
-        response = {
+    def send_response(self, cid, mid, response):
+        message = {
             'status': 'ok',
             'time': time.time(),
+            'response': response,
         }
-        response.update(message)
-        self.send_message(mid, cid, response)
+        self.send_message(cid, mid, message)
 
-    def send_message(self, mid, cid, message):
-        self.log.debug('send_message: mid: {0}, cid: {1}, message: {2}'.format(mid, cid, message))
+    def send_message(self, cid, mid, message):
+        self.log.debug('send_message: cid: {0}, mid: {1}, message: {2}'.format(cid, mid, message))
         message['id'] = mid
         try:
             self.socket.send(cid, zmq.SNDMORE)
@@ -282,14 +309,30 @@ class Controller(gevent.Greenlet):
     def _run(self):
         while self._keep_going:
             client_id = self.socket.recv()
+            message_id = None
             try:
                 request = self.socket.recv_json()
                 message_id = request['id']
+                command = request['command']
                 # TODO: see netboot/tftp/server.py TftpListener for how to dispatch to handler
-                response = request
-                self.send_response(message_id, client_id, response)
+                self.log.debug('<< {0} {1}: {2!r}'.format(command, client_id, request))
+                try:
+                    command_handler = getattr(self.handler, "handle_{}".format(command))
+                except AttributeError as e:
+                    self.log.debug('Unknown message type encountered: {0}'.format(command))
+                    self.send_error(client_id, message_id, 'Operation not supported')
+                    continue
+                try:
+                    # Do _not_ spawn another greenlet here.
+                    response = command_handler(client_id, message_id, request)
+                    self.send_response(client_id, message_id, response)
+                except Exception as e:
+                    self.log.error('Uncaught Exception: {0}'.format(e), exc_info=True)
+                    self.send_error(client_id, message_id, 'Internal Server Error')
+                    raise
+
             except (ValueError, zmq.ZMQError) as e:
-                self.send_error(mid, cid, str(e))
+                self.send_error(client_id, message_id, str(e))
         if self.socket:
             self.socket.close()
 
