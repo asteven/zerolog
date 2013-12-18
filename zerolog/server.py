@@ -339,33 +339,6 @@ class Controller(gevent.Greenlet):
         config = request.get('args', {}).get('config', None)
         return self.manager.update(name, config)
 
-    def foo(self):
-        address = self.controller.recv()
-        empty = self.controller.recv()
-        request = self.controller.recv()
-        reply = {}
-        if request == 'endpoints':
-            reply = self.config['endpoints']
-        elif request == 'list':
-            self.log.debug('received request: {0}'.format(request))
-            reply = self.loggers
-        else:
-            logger_name = self.controller.recv()
-            self.log.debug('received request: {0} {1}'.format(request, logger_name))
-            if request == 'set':
-                logger_config = self.controller.recv_json()
-                self.loggers[logger_name].update(logger_config)
-                self.configure(logger_name)
-            elif request == 'get':
-                try:
-                    reply = self.loggers[logger_name]
-                except KeyError as e:
-                    self.log.error('could not find config for requested logger: {0}'.format(str(e)))
-        self.controller.send(client_id, zmq.SNDMORE)
-        self.controller.send('', zmq.SNDMORE)
-        self.controller.send_json(reply)
-
-
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
