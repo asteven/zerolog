@@ -25,12 +25,6 @@ def parse_args(argv):
         help='uri of the zeromq socket on which log messages are published')
     parser.add_argument('command', help='command to run')
 
-    # TODO: use parse_known_args and let a command specific parser handle the rest
-
-#    parser.add_argument('command_args', nargs='*', metavar='key:value',
-#        help='zero or more %(metavar)s pairs as arguments for command')
-
-    #args = parser.parse_args(argv)
     args, remaining_args = parser.parse_known_args(argv)
     log_level = args.log_level or 'info'
     level = getattr(logging, log_level.upper())
@@ -47,6 +41,7 @@ def command_list(argv):
     log.debug('{0!r}'.format(message))
     for name,config in message['response'].items():
         print('{0}: {1}'.format(name, config))
+
 
 def command_set(argv):
     log = logging.getLogger(__name__)
@@ -65,6 +60,7 @@ def command_set(argv):
     client = zerolog.client.ZerologClient()
     response = client.call('set', payload)
     log.debug('{0!r}'.format(response))
+
 
 def command_get(argv):
     log = logging.getLogger(__name__)
@@ -89,39 +85,16 @@ def main(argv=sys.argv[1:]):
     log.debug('args: {0}'.format(args))
     log.debug('command_args: {0}'.format(command_args))
 
-    command = globals().get('command_{0}'.format(args.command), None)
-    if command:
-        command(command_args)
-    else:
-        print('unknown command: {0}'.format(args.command))
-    return
+    try:
+        command = globals().get('command_{0}'.format(args.command), None)
+        if command:
+            command(command_args)
+        else:
+            print('unknown command: {0}'.format(args.command))
+            sys.exit(1)
+    except KeyboardInterrupt:
+        pass
 
-    client = zerolog.client.ZerologClient()
-    command_args = dict(item.split(':') for item in args.command_args)
-    log.debug('command_args: {0}'.format(command_args))
-    response = client.call(args.command, command_args)
-    print('{0!r}'.format(response))
-    return
-
-    client = zerolog.client.ZerologClient()
-    response = client.call('list')
-    print('{0!r}'.format(response))
-
-    request = {'name': '__main__', 'config': {'level': 'ERROR'}}
-    response = client.call('set', request)
-    print('{0!r}'.format(response))
-
-    time.sleep(5)
-
-    request = {'name': '__main__', 'config': {'level': 'DEBUG'}}
-    response = client.call('set', request)
-    print('{0!r}'.format(response))
-
-    time.sleep(5)
-
-    request = {'name': '__main__', 'config': {'level': 'ERROR'}}
-    response = client.call('set', request)
-    print('{0!r}'.format(response))
 
 
 if __name__ == '__main__':
