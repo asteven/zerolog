@@ -5,6 +5,8 @@ import sys
 import argparse
 import logging
 import collections
+import uuid
+import time
 
 import gevent
 
@@ -12,6 +14,61 @@ import zmq.green as zmq
 from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
+
+
+class CallError(Exception):
+    pass
+
+
+class ZerologClient(object):
+    def __init__(self, context=None,
+            endpoint=zerolog.default_endpoints['control'],
+            timeout=5.0):
+        self.context = context or zmq.Context.instance()
+        self.endpoint = endpoint
+        self._id = uuid.uuid4().hex
+        self.socket = self.context.socket(zmq.DEALER)
+        self.socket.setsockopt(zmq.IDENTITY, self._id)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        self.socket.connect(self.endpoint)
+        self._init_poller()
+        self._timeout = timeout
+        self.timeout = timeout * 1000
+
+    def _init_poller(self):
+        self.poller = zmq.Poller()
+        self.poller.register(self.socket, zmq.POLLIN)
+
+    def stop(self):
+        self.socket.close()
+
+    def call(self, command, args=None):
+        message = {
+            'command': command,
+            'args': args or {},
+        }
+        return self.send_message(message)
+
+    def send_message(self, message):
+        message_id = uuid.uuid4().hex
+        message['id'] = message_id
+        message['time'] = time.time()
+
+        try:
+            self.socket.send_json(message)
+        except zmq.ZMQError as e:
+            raise CallError(str(e))
+
+        while True:
+            try:
+                message = self.socket.recv()
+                response = json.loads(message)
+                if response['id'] != message_id:
+                    # we got the wrong message
+                    continue
+                return response
+            except ValueError as e:
+                raise CallError(str(e))
 
 
 class LogSubscriber(gevent.Greenlet):
