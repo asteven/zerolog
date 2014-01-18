@@ -19,7 +19,7 @@ import zmq.green as zmq
 from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
-
+from . import errors
 
 config = {
     'endpoints': zerolog.default_endpoints,
@@ -265,30 +265,14 @@ class Controller(gevent.Greenlet):
     def _run(self):
         while self._keep_going:
             client_id = self.socket.recv()
-            message_id = None
             try:
-                request = self.socket.recv_json()
-                message_id = request['id']
-                command = request['command']
-                # TODO: see netboot/tftp/server.py TftpListener for how to dispatch to handler
-                self.log.debug('<< {0} {1}: {2!r}'.format(command, client_id, request))
-                try:
-                    command_handler = getattr(self, "handle_{}".format(command))
-                except AttributeError as e:
-                    self.log.debug('Unknown message type encountered: {0}'.format(command))
-                    self.send_error(client_id, message_id, 'Operation not supported')
-                    continue
-                try:
-                    # Do _not_ spawn another greenlet here.
-                    response = command_handler(client_id, message_id, request)
-                    self.send_response(client_id, message_id, response)
-                except Exception as e:
-                    self.log.error('Uncaught Exception: {0}'.format(e), exc_info=True)
-                    self.send_error(client_id, message_id, 'Internal Server Error')
-                    raise
-
+                message = self.socket.recv()
+                message = message.strip()
+                self.log.debug('<< {0}: {1}'.format(client_id, message))
+                if message:
+                    self.dispatch(client_id, message)
             except (ValueError, zmq.ZMQError) as e:
-                self.send_error(client_id, message_id, str(e))
+                self.send_error(client_id, None, str(e))
         if self.socket:
             self.socket.close()
 
@@ -296,47 +280,72 @@ class Controller(gevent.Greenlet):
         self._keep_going = False
         super(Controller, self).kill(exception=exception, **kwargs)
 
-    def send_error(self, cid, mid, reason='unknown', tb=None):
+    def dispatch(self, client_id, message):
+        try:
+            json_msg = json.loads(message)
+        except ValueError:
+            return self.send_error(client_id, None, message, 'json invalid',
+                                   errno=errors.INVALID_JSON)
+        message_id = json_msg['id']
+        command = json_msg['command']
+        arguments = json_msg.get('args', {})
+
+        try:
+            command_handler = getattr(self, 'handle_{}'.format(command))
+        except AttributeError as e:
+            error_message = 'unknown command: {0}'.format(command)
+            self.log.debug(error_message)
+            return self.send_error(client_id, message_id, error_message)
+        try:
+            # Do _not_ spawn another greenlet here.
+            response = command_handler(arguments)
+            self.send_response(client_id, message_id, response)
+        except Exception as e:
+            self.log.error('Uncaught Exception: {0}'.format(e), exc_info=True)
+            self.send_error(client_id, message_id, 'Internal Server Error', errno=errors.OS_ERROR)
+            raise
+
+    def send_error(self, client_id, message_id, reason, traceback=None, errno=errors.NOT_SPECIFIED):
         message = {
             'status': 'error',
             'reason': reason,
-            'tb': tb,
-            'time': time.time(),
+            'traceback': traceback,
+            'errno': errno,
         }
-        self.send_message(cid, mid, message)
+        self.send_message(client_id, message_id, message)
 
-    def send_response(self, cid, mid, response):
+    def send_response(self, client_id, message_id, response):
         message = {
             'status': 'ok',
-            'time': time.time(),
             'response': response,
         }
-        self.send_message(cid, mid, message)
+        self.send_message(client_id, message_id, message)
 
-    def send_message(self, cid, mid, message):
-        self.log.debug('send_message: cid: {0}, mid: {1}, message: {2}'.format(cid, mid, message))
-        message['id'] = mid
+    def send_message(self, client_id, message_id, message):
+        message['id'] = message_id
+        message['time'] = time.time()
+        self.log.debug('>> {0}: {1}'.format(client_id, message))
         try:
-            self.socket.send(cid, zmq.SNDMORE)
+            self.socket.send(client_id, zmq.SNDMORE)
             self.socket.send_json(message)
         except (ValueError, zmq.ZMQError) as e:
-            self.log.error('Failed to send message to {0}: {1}'.format(cid, message))
+            self.log.error('Failed to send message to {0}: {1}'.format(client_id, message))
 
-    def handle_list(self, client_id, message_id, request):
+    def handle_list(self, args):
         return self.manager.loggers
 
-    def handle_get(self, client_id, message_id, request):
-        name = request.get('args', {}).get('name', None)
+    def handle_get(self, args):
+        name = args.get('name', None)
         return self.manager.get(name)
 
-    def handle_set(self, client_id, message_id, request):
-        name = request.get('args', {}).get('name', None)
-        config = request.get('args', {}).get('config', None)
+    def handle_set(self, args):
+        name = args.get('name', None)
+        config = args.get('config', None)
         return self.manager.set(name, config)
 
     def handle_update(self, client_id, message_id, request):
-        name = request.get('args', {}).get('name', None)
-        config = request.get('args', {}).get('config', None)
+        name = args.get('name', None)
+        config = args.get('config', None)
         return self.manager.update(name, config)
 
 
