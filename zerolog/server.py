@@ -19,9 +19,10 @@ import zmq.green as zmq
 from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
-from . import errors
+from zerolog import errors
 
-config = {
+
+default_config = {
     'endpoints': zerolog.default_endpoints,
     'logging': {
         'version': 1,
@@ -112,18 +113,18 @@ class Server(gevent.Greenlet):
 
         _collect = self.context.socket(zmq.SUB)
         _collect.setsockopt(zmq.SUBSCRIBE, '')
-        _collect.bind(self.config['endpoints']['collect'])
+        _collect.bind(zerolog.get_endpoint(self.config['endpoints']['collect']))
         self.sockets['collect'] = _collect
 
         _publish = self.context.socket(zmq.XPUB)
         _publish.hwm = 100000
         _publish.linger = 1000
-        _publish.bind(self.config['endpoints']['publish'])
+        _publish.bind(zerolog.get_endpoint(self.config['endpoints']['publish']))
         self.sockets['publish'] = _publish
 
         _control = self.context.socket(zmq.ROUTER)
         _control.linger = 0
-        _control.bind(self.config['endpoints']['control'])
+        _control.bind(zerolog.get_endpoint(self.config['endpoints']['control']))
         self.sockets['control'] = _control
 
         self.manager = ConfigManager(self.sockets['publish'], self.config)
@@ -362,8 +363,7 @@ def parse_args(argv):
         help='be verbose, set log level to info, overrides --log-level')
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
         help='do not log received messages to stdout')
-    #parser.add_argument('config', nargs=1,
-    #    help='path to json encoded config file')
+    parser.add_argument('-c', '--config', help='path to json config file')
 
     args = parser.parse_args(argv)
 
@@ -376,26 +376,21 @@ def parse_args(argv):
     if args.debug:
         logging.root.setLevel(logging.DEBUG)
 
+    log = logging.getLogger('zerolog')
     log.debug(args)
     return args
 
 
 def main(argv=sys.argv[1:]):
-    print('this is broken')
-    return
     args = parse_args(argv)
-    context = zmq.Context()
-    #with open(args.config, 'r') as fd:
-    #    config = json.load(fd)
-    jobs = Group()
-    try:
-        jobs.start(Server(config, context=context, quiet=args.quiet))
-        jobs.join()
-    except KeyboardInterrupt:
-        jobs.kill()
 
+    if args.config:
+        with open(args.config, 'r') as fd:
+            config = json.load(fd)
+    else:
+        from zerolog.server import default_config as config
 
-def foo():
+    context = zmq.Context.instance()
     job = Server(config, context=context, quiet=args.quiet)
     try:
         job.start()

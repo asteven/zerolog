@@ -1,0 +1,37 @@
+{
+   "endpoints": {
+       "control": "ipc:///tmp/zerolog/control",
+       "collect": "ipc:///tmp/zerolog/collect",
+       "publish": "ipc:///tmp/zerolog/publish"
+   },
+   "logging": {
+      "version": 1,
+      "disable_existing_loggers": true,
+      "formatters": {
+         "simple": {
+            "format": "%(asctime)s %(name)s %(levelname)s: %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S"
+         }
+      },
+      "handlers": {
+         "console": {
+            "class": "logging.StreamHandler",
+            "level": "NOTSET",
+            "formatter": "simple",
+            "stream": "ext://sys.stdout"
+         }
+      },
+      "root": {
+         "level": "DEBUG",
+         "handlers": ["console"]
+      },
+      "loggers": {
+         "zerolog": {
+            "level": "DEBUG"
+         },
+         "example": {
+            "level": "INFO"
+         }
+      }
+   }
+}
