@@ -34,49 +34,63 @@ def parse_args(argv):
     return args,remaining_args
 
 
-def command_list(argv):
-    log = logging.getLogger(__name__)
-    client = zerolog.client.ZerologClient()
-    message = client.call('list')
-    log.debug('{0!r}'.format(message))
-    for name,config in message['response'].items():
-        print('{0}: {1}'.format(name, config))
+class ControllerClient(zerolog.client.ZerologClient):
+    def command_endpoints(self, argv):
+        log = logging.getLogger(__name__)
+        message = self.call('endpoints')
+        log.debug('{0!r}'.format(message))
+        for name,config in message['response'].items():
+            print('{0}: {1}'.format(name, config))
 
 
-def command_set(argv):
-    log = logging.getLogger(__name__)
-    parser = argparse.ArgumentParser()
-    parser.add_argument('name', help='the name of the logger to set properties on')
-    parser.add_argument('config', nargs='*', metavar='key:value',
-        help='zero or more %(metavar)s pairs as config for logger')
-    args = parser.parse_args(argv)
-    config = dict(item.split(':') for item in args.config)
-    payload = {
-        'name': args.name,
-        'config': config,
-    }
-    log.debug('payload: {0}'.format(payload))
-
-    client = zerolog.client.ZerologClient()
-    response = client.call('set', payload)
-    log.debug('{0!r}'.format(response))
+    def command_list(self, argv):
+        log = logging.getLogger(__name__)
+        message = self.call('list')
+        log.debug('{0!r}'.format(message))
+        for name,config in message['response'].items():
+            print('{0}: {1}'.format(name, config))
 
 
-def command_get(argv):
-    log = logging.getLogger(__name__)
-    parser = argparse.ArgumentParser()
-    parser.add_argument('name', help='the name of the logger to get properties for')
-    args = parser.parse_args(argv)
-    payload = {
-        'name': args.name,
-    }
-    log.debug('payload: {0}'.format(payload))
+    def command_set(self, argv):
+        log = logging.getLogger(__name__)
+        parser = argparse.ArgumentParser()
+        parser.add_argument('name', help='the name of the logger to set properties on')
+        parser.add_argument('config', nargs='*', metavar='key:value',
+            help='zero or more %(metavar)s pairs as config for logger')
+        args = parser.parse_args(argv)
+        config = dict(item.split(':') for item in args.config)
+        payload = {
+            'name': args.name,
+            'config': config,
+        }
+        log.debug('payload: {0}'.format(payload))
 
-    client = zerolog.client.ZerologClient()
-    message = client.call('get', payload)
-    log.debug('{0!r}'.format(message))
-    for name,config in message['response'].items():
-        print('{0}: {1}'.format(name, config))
+        response = self.call('set', payload)
+        log.debug('{0!r}'.format(response))
+
+
+    def command_get(self, argv):
+        log = logging.getLogger(__name__)
+        parser = argparse.ArgumentParser()
+        parser.add_argument('name', help='the name of the logger to get properties for')
+        args = parser.parse_args(argv)
+        payload = {
+            'name': args.name,
+        }
+        log.debug('payload: {0}'.format(payload))
+
+        message = self.call('get', payload)
+        log.debug('{0!r}'.format(message))
+        for name,config in message['response'].items():
+            print('{0}: {1}'.format(name, config))
+
+    def run(self, command, command_args):
+        command = getattr(self, 'command_{0}'.format(command), None)
+        if command:
+            command(command_args)
+        else:
+            print('unknown command: {0}'.format(command))
+            sys.exit(1)
 
 
 def main(argv=sys.argv[1:]):
@@ -85,16 +99,12 @@ def main(argv=sys.argv[1:]):
     log.debug('args: {0}'.format(args))
     log.debug('command_args: {0}'.format(command_args))
 
+    client = ControllerClient(endpoint=args.endpoint)
+
     try:
-        command = globals().get('command_{0}'.format(args.command), None)
-        if command:
-            command(command_args)
-        else:
-            print('unknown command: {0}'.format(args.command))
-            sys.exit(1)
+        client.run(args.command, command_args)
     except KeyboardInterrupt:
         pass
-
 
 
 if __name__ == '__main__':

@@ -332,6 +332,9 @@ class Controller(gevent.Greenlet):
         except (ValueError, zmq.ZMQError) as e:
             self.log.error('Failed to send message to {0}: {1}'.format(client_id, message))
 
+    def handle_endpoints(self, args):
+        return self.manager.config['endpoints']
+
     def handle_list(self, args):
         return self.manager.loggers
 

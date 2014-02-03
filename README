@@ -48,3 +48,11 @@ PYTHONPATH="." python zerolog tail
 PYTHONPATH="." python zerolog emit 0.1
 PYTHONPATH="." python zerolog zeroemit 0.1
 PYTHONPATH="." python zerolog multiemit 0.5
+--------------------------------------------------------------------------------
+
+# using json config file
+PYTHONPATH="." python zerolog/server.py -d --config ./doc/dev/config.json
+
+# connect to control socket defined in json config
+PYTHONPATH="." python zerolog/zerologctl.py -d --endpoint ipc:///tmp/zerolog/control endpoints
+PYTHONPATH="." python zerolog/zerologctl.py -d --endpoint ipc:///tmp/zerolog/control list
