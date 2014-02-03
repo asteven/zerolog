@@ -220,7 +220,7 @@ def main():
             job = DebugZerologEmitter(interval)
     elif name == 'dispatch':
         from zerolog.server import Server
-        from zerolog.server import default_config
+        from zerolog.server import default_config as config
         job = Server(config, context=context, quiet=True)
     elif name == 'tail':
         from zerolog.client import LogSubscriber
