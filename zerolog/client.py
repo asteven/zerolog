@@ -31,13 +31,8 @@ class ZerologClient(object):
         self.socket.setsockopt(zmq.IDENTITY, self._id)
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.connect(self.endpoint)
-        self._init_poller()
         self._timeout = timeout
         self.timeout = timeout * 1000
-
-    def _init_poller(self):
-        self.poller = zmq.Poller()
-        self.poller.register(self.socket, zmq.POLLIN)
 
     def stop(self):
         self.socket.close()
