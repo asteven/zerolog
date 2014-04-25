@@ -78,7 +78,7 @@ class LogSubscriber(gevent.Greenlet):
         super(LogSubscriber, self).__init__()
         self.uri = uri
         self.topics = topics or ['']
-        self.context = context or zmq.Context()
+        self.context = context or zmq.Context.instance()
         self.log_level_name = log_level_name
         self.log_level = logging.getLevelName(self.log_level_name.upper())
         self._keep_going = True
@@ -109,40 +109,38 @@ class LogSubscriber(gevent.Greenlet):
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--debug', action='store_true', default=False,
-        help='set log level to debug')
-    parser.add_argument('-v', '--verbose', action='store_true', default=False,
-        help='be verbose, set log level to info')
-    parser.add_argument('--uri', required=True,
-        help='uri of the zeromq socket on which log messages are published')
-    default_format='%(levelname)s: %(name)s: %(message)s'
-    parser.add_argument('--log-level', default='info',
+    parser.add_argument('--endpoint', required=False,
+        help='uri of the zerolog control socket')
+    parser.add_argument('--log-level', dest='log_level', default='info',
         help='log level. defaults to info')
-    parser.add_argument('--log-format', default=default_format,
-        help='log format string. defaults to {}'.format(default_format.replace('%', '%%')))
+    default_log_format = '%(levelname)s: %(name)s: %(message)s'
+    parser.add_argument('--log-format', default=default_log_format,
+        help='log format string. defaults to {}'.format(default_log_format.replace('%', '%%')))
+    parser.add_argument('-d', '--debug', action='store_const', const='debug', dest='log_level',
+        help='set log level to debug')
+    parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
+        help='be verbose, set log level to info')
     parser.add_argument('topic', default=None,
         nargs='*',
-        help='the log topics to subscribe for')
+        help='one or more logger names to subscribe for')
 
     args = parser.parse_args(argv)
     level = getattr(logging, args.log_level.upper())
     logging.basicConfig(level=level, format=args.log_format, stream=sys.stdout)
-
-    if args.verbose:
-        logging.root.setLevel(logging.INFO)
-    # debug overrides verbose
-    if args.debug:
-        logging.root.setLevel(logging.DEBUG)
 
     return args
 
 
 def main(argv=sys.argv[1:]):
     args = parse_args(argv)
-    context = zmq.Context()
-    job = LogSubscriber(zerolog.get_endpoint(args.uri),
+    if args.endpoint:
+        endpoints = zerolog.get_endpoints_from_controller(args.endpoint)
+    else:
+        endpoints = zerolog.default_endpoints
+
+    job = LogSubscriber(
+        zerolog.get_endpoint(endpoints['publish']),
         topics=args.topic,
-        context=context,
         log_level_name=args.log_level
     )
     try:
