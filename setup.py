@@ -11,4 +11,10 @@ setup(
     url='http://github.com/asteven/%s/' % name,
     description='Distributed log stream collecting and logger configuration system for python',
     packages=find_packages(),
+    entry_points="""
+    [console_scripts]
+    zerolog-server = zerolog.server:main
+    zerolog-client = zerolog.client:main
+    zerolog-control = zerolog.control:main
+    """
 )
