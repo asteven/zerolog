@@ -105,7 +105,7 @@ class Server(gevent.Greenlet):
     def __init__(self, config, context=None, quiet=False):
         super(Server, self).__init__()
         self.config = config
-        self.context = context or zmq.Context()
+        self.context = context or zmq.Context.instance()
         self.quiet = quiet
 
         # dict of the zeromq sockets we use
@@ -393,8 +393,7 @@ def main(argv=sys.argv[1:]):
     else:
         from zerolog.server import default_config as config
 
-    context = zmq.Context.instance()
-    job = Server(config, context=context, quiet=args.quiet)
+    job = Server(config, quiet=args.quiet)
     try:
         job.start()
         job.join()
