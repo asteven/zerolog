@@ -54,5 +54,15 @@ PYTHONPATH="." python zerolog multiemit 0.5
 PYTHONPATH="." python zerolog/server.py -d --config ./doc/dev/config.json
 
 # connect to control socket defined in json config
-PYTHONPATH="." python zerolog/zerologctl.py -d --endpoint ipc:///tmp/zerolog/control endpoints
-PYTHONPATH="." python zerolog/zerologctl.py -d --endpoint ipc:///tmp/zerolog/control list
+PYTHONPATH="." python zerolog/control.py -d --endpoint ipc:///tmp/zerolog/control endpoints
+PYTHONPATH="." python zerolog/control.py -d --endpoint ipc:///tmp/zerolog/control list
+--------------------------------------------------------------------------------
+
+== with zerolog installed ==
+pip install zerolog
+
+zerolog-server --config ./doc/dev/config.json -d
+zerolog-control --endpoint ipc:///tmp/zerolog/control -d endpoints
+zerolog-control --endpoint ipc:///tmp/zerolog/control -d list
+zerolog-client --endpoint ipc:///tmp/zerolog/control -d
+
