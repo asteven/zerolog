@@ -18,9 +18,9 @@ import zmq.green as zmq
 class LogEmitter(gevent.Greenlet):
     """Dumb log emitter that is not configured by the zerolog server.
     """
-    def __init__(self, endpoint, context, interval):
+    def __init__(self, endpoint, interval, context=None):
         super(LogEmitter, self).__init__()
-        self.context = context
+        self.context = context or zmq.Context.instance()
         self.interval = interval
         self.socket = self.context.socket(zmq.PUB)
         self.socket.connect(endpoint)
@@ -198,8 +198,6 @@ def main():
 
     from zerolog import default_endpoints as endpoints
 
-    context = zmq.Context.instance()
-
     try:
         name = sys.argv[1]
     except IndexError:
@@ -211,7 +209,7 @@ def main():
         except IndexError:
             interval = 1
         if name == 'emit':
-            job = LogEmitter(endpoints['collect'].replace('*', 'localhost'), context, interval)
+            job = LogEmitter(endpoints['collect'].replace('*', 'localhost'), interval)
         elif name == 'zeroemit':
             job = ZerologEmitter(interval)
         elif name == 'multiemit':
@@ -221,12 +219,12 @@ def main():
     elif name == 'dispatch':
         from zerolog.server import Server
         from zerolog.server import default_config as config
-        job = Server(config, context=context, quiet=True)
+        job = Server(config, quiet=True)
     elif name == 'tail':
         from zerolog.client import LogSubscriber
-        job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:], context=context)
+        job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:])
     else:
-        print("invalid usage : emit|zeroemit|dispatch|tail")
+        print("invalid usage : dispatch|tail|emit|zeroemit|multiemit")
         sys.exit(1)
 
     try:
