@@ -15,25 +15,6 @@ import zerolog
 import zerolog.client
 
 
-def parse_args(argv):
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--debug', action='store_const', const='debug', dest='log_level',
-        help='set log level to debug')
-    parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
-        help='be verbose, set log level to info')
-    parser.add_argument('--endpoint', required=False,
-        help='uri of the zeromq socket on which log messages are published')
-    parser.add_argument('command', help='command to run')
-
-    args, remaining_args = parser.parse_known_args(argv)
-    log_level = args.log_level or 'info'
-    level = getattr(logging, log_level.upper())
-    log_format='%(levelname)s: %(name)s: %(message)s'
-    logging.basicConfig(level=level, format=log_format, stream=sys.stderr)
-
-    return args,remaining_args
-
-
 class ControllerClient(zerolog.client.ZerologClient):
     def command_endpoints(self, argv):
         log = logging.getLogger(__name__)
@@ -91,6 +72,25 @@ class ControllerClient(zerolog.client.ZerologClient):
         else:
             print('unknown command: {0}'.format(command))
             sys.exit(1)
+
+
+def parse_args(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-d', '--debug', action='store_const', const='debug', dest='log_level',
+        help='set log level to debug')
+    parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
+        help='be verbose, set log level to info')
+    parser.add_argument('--endpoint', required=False,
+        help='uri of the zerolog control socket')
+    parser.add_argument('command', help='command to run')
+
+    args, remaining_args = parser.parse_known_args(argv)
+    log_level = args.log_level or 'info'
+    level = getattr(logging, log_level.upper())
+    log_format='%(levelname)s: %(name)s: %(message)s'
+    logging.basicConfig(level=level, format=log_format, stream=sys.stderr)
+
+    return args,remaining_args
 
 
 def main(argv=sys.argv[1:]):
