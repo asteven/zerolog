@@ -46,6 +46,15 @@ def get_endpoint(endpoint):
     return endpoint
 
 
+def get_endpoints_from_controller(endpoint):
+    # TODO: error handling
+    from zerolog.client import ZerologClient
+    client = ZerologClient(endpoint=endpoint)
+    message = client.call('endpoints')
+    endpoints = message['response']
+    return endpoints
+
+
 def configure(endpoints=None, context=None):
     """Configure python logging to be zerolog aware.
 
@@ -81,7 +90,10 @@ def getLocalLogger(name=None):
 class ZerologManager(logging.Manager):
     def __init__(self, endpoints, context=None):
         super(ZerologManager, self).__init__(logging.getLogger())
-        self.endpoints = endpoints
+        if 'control' in endpoints:
+            self.endpoints = get_endpoints_from_controller(endpoints['control'])
+        else:
+            self.endpoints = endpoints
         self.context = context or zmq.Context.instance()
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(self.endpoints['publish'])
