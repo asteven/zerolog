@@ -65,4 +65,5 @@ zerolog-server --config ./doc/dev/config.json -d
 zerolog-control --endpoint ipc:///tmp/zerolog/control -d endpoints
 zerolog-control --endpoint ipc:///tmp/zerolog/control -d list
 zerolog-client --endpoint ipc:///tmp/zerolog/control -d
-
+zerolog-control --endpoint ipc:///tmp/zerolog/control set some.logger level:DEBUG
+zerolog-control --endpoint ipc:///tmp/zerolog/control set some.logger level:INFO
