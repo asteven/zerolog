@@ -11,7 +11,7 @@ import time
 import gevent
 
 import zmq.green as zmq
-from zmq.utils.jsonapi import jsonmod as json
+import zmq.utils.jsonapi as json
 
 import zerolog
 
