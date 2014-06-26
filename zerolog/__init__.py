@@ -8,7 +8,7 @@ import gevent
 import gevent.queue
 
 import zmq.green as zmq
-import zmq.utils.jsonapi as json
+from zmq.utils.jsonapi import jsonmod as json
 
 from . import compat
 

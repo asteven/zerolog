@@ -16,7 +16,7 @@ import gevent.queue
 from gevent.pool import Group
 
 import zmq.green as zmq
-import zmq.utils.jsonapi as json
+from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
 from zerolog import errors
