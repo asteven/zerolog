@@ -2,13 +2,13 @@
 
 import os
 import socket
+import json
 import logging
 
 import gevent
 import gevent.queue
 
 import zmq.green as zmq
-from zmq.utils.jsonapi import jsonmod as json
 
 from . import compat
 
@@ -120,22 +120,25 @@ class ZerologManager(logging.Manager):
             logger_name = topic[len(config_prefix):]
             config = json.loads(message)
             logger = self.getLogger(logger_name)
-            if 'level' in config:
-                level = config['level'].upper()
-                self.log.debug('setting loglevel of {0} to {1}'.format(logger_name, level))
-                logger.setLevel(level)
-            if 'propagate' in config:
-                propagate = config['propagate']
-                if propagate:
-                    # if we are propagating to parent logger
-                    # there is no need for this logger to have it's
-                    # own zerolog handler, so remove it
-                    self.remove_zerolog_handler(logger)
-                else:
-                    # otherwise it needs its own zerolog handler
-                    # or we simply wont get any logs from this handler
-                    self.add_zerolog_handler(logger)
-                logger.propagate = propagate
+            self.configure(logger, config)
+
+    def configure(self, logger, config):
+        if 'level' in config:
+            level = config['level'].upper()
+            self.log.debug('setting loglevel of {0} to {1}'.format(logger.name, level))
+            logger.setLevel(level)
+        if 'propagate' in config:
+            propagate = config['propagate']
+            if propagate:
+                # if we are propagating to parent logger
+                # there is no need for this logger to have it's
+                # own zerolog handler, so remove it
+                self.remove_zerolog_handler(logger)
+            else:
+                # otherwise it needs its own zerolog handler
+                # or we simply wont get any logs from this handler
+                self.add_zerolog_handler(logger)
+            logger.propagate = propagate
 
     def add_zerolog_handler(self, logger):
         if not self.zerolog_handler in logger.handlers:
@@ -179,8 +182,9 @@ class ZerologManager(logging.Manager):
                 setattr(self, attr, value)
         for name,logger in other_manager.loggerDict.items():
             self.loggerDict[name] = logger
-            if not isinstance(logger, logging.PlaceHolder):
-                self.subscribe(name)
+            #if not isinstance(logger, logging.PlaceHolder):
+            #    self.subscribe(name)
+            self.subscribe(name)
 
 
 class ZerologHandler(logging.Handler):

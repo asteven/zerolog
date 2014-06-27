@@ -7,11 +7,11 @@ import logging
 import collections
 import uuid
 import time
+import json
 
 import gevent
 
 import zmq.green as zmq
-from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
 
@@ -106,21 +106,22 @@ def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('--endpoint', required=False,
         help='uri of the zerolog control socket')
-    parser.add_argument('--log-level', dest='log_level', default='info',
-        help='log level. defaults to info')
     default_log_format = '%(levelname)s: %(name)s: %(message)s'
     parser.add_argument('--log-format', default=default_log_format,
         help='log format string. defaults to {}'.format(default_log_format.replace('%', '%%')))
-    parser.add_argument('-d', '--debug', action='store_const', const='debug', dest='log_level',
+    loglevel_parser = parser.add_mutually_exclusive_group(required=False)
+    loglevel_parser.add_argument('--log-level', dest='log_level', default='info',
+        help='log level. defaults to info')
+    loglevel_parser.add_argument('-d', '--debug', action='store_const', const='debug', dest='log_level',
         help='set log level to debug')
-    parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
+    loglevel_parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
         help='be verbose, set log level to info')
     parser.add_argument('topic', default=None,
         nargs='*',
         help='one or more logger names to subscribe for')
 
     args = parser.parse_args(argv)
-    level = getattr(logging, args.log_level.upper())
+    level = logging.getLevelName(args.log_level.upper())
     logging.basicConfig(level=level, format=args.log_format, stream=sys.stdout)
 
     return args

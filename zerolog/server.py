@@ -10,13 +10,13 @@ import sys
 import argparse
 import logging
 import time
+import json
 
 import gevent
 import gevent.queue
 from gevent.pool import Group
 
 import zmq.green as zmq
-from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
 from zerolog import errors
@@ -191,8 +191,6 @@ class ConfigManager(gevent.Greenlet):
                 else:
                     self.log.debug('client unsubscribed from {}'.format(subscription))
                     self.subscriptions.remove(subscription)
-                    if subscription.startswith(zerolog.config_prefix):
-                        self.remove(subscription[len(zerolog.config_prefix):])
             except zmq.ZMQError as e:
                 self.log.error('{0}'.format(e))
 
@@ -200,20 +198,28 @@ class ConfigManager(gevent.Greenlet):
         self._keep_going = False
         super(ConfigManager, self).kill(exception=exception, **kwargs)
 
-    def add(self, logger_name):
-        """Add a logger to the manager and mark it as subscribed.
+    def configure_parent_with_config(self, logger_name):
+        """Find a parent of the the given logger which has a config.
         """
-        if not logger_name in self.loggers:
-            logger_config = self.config.get('logging', {}).get('loggers', {}).get(logger_name, {})
-            self.loggers[logger_name] = logger_config
-        self.loggers[logger_name]['subscribed'] = True
-        self.configure(logger_name)
+        name = logger_name
+        while name:
+            name = name.rpartition('.')[0]
+            config = self.get(name)
+            if config:
+                self.configure(name)
+                break
 
-    def remove(self, logger_name):
-        """Mark a logger as unsubscribed.
+    def add(self, logger_name):
+        """Add a logger to the manager and configure it or it's parent.
         """
-        if logger_name in self.loggers:
-            self.loggers[logger_name]['subscribed'] = False
+        config = self.get(logger_name)
+        if config:
+            # this logger has it's own config, publish it
+            self.configure(logger_name)
+        else:
+            # this logger has no own config
+            # check if we have a config for one of it's parents
+            self.configure_parent_with_config(logger_name)
 
     def update(self, logger_name, logger_config):
         """Update the given loggers configuration.
@@ -225,23 +231,23 @@ class ConfigManager(gevent.Greenlet):
     def get(self, logger_name):
         """Get the given loggers configuration.
         """
-        return self.loggers.get(logger_name, {})
+        if not logger_name in self.loggers:
+            logger_config = self.config.get('logging', {}).get('loggers', {}).get(logger_name, {})
+            self.loggers[logger_name] = logger_config
+        return self.loggers[logger_name]
 
     def set(self, logger_name, logger_config):
         """Set the given loggers configuration.
         """
-        subscribed = self.get(logger_name).get('subscribed', False)
         self.loggers[logger_name] = logger_config
-        self.loggers[logger_name]['subscribed'] = subscribed
         self.configure(logger_name)
 
     def configure(self, logger_name):
         """Publish the current configuration to the given named logger.
         """
         config = self.get(logger_name)
-        self.log.debug('configure logger {0} with: {1}'.format(logger_name, config))
-        # only configure if config contains more then just the 'subscribed' key
-        if config.get('subscribed', False) and len(config) > 1:
+        if config:
+            self.log.debug('configure logger {0} with: {1}'.format(logger_name, config))
             topic = zerolog.config_prefix + logger_name
             self.socket.send_multipart([
                 topic.encode('utf-8'),
@@ -355,29 +361,24 @@ class Controller(gevent.Greenlet):
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--log-level', default='warn',
-        help='log level. defaults to warn')
     default_format='%(asctime)s %(name)s[%(process)d] %(levelname)s: %(message)s'
     parser.add_argument('--log-format', default=default_format,
         help='log format string. defaults to \'{0}\''.format(default_format.replace('%', '%%')))
-    parser.add_argument('-d', '--debug', action='store_true', default=False,
-        help='set log level to debug, overrides --log-level')
-    parser.add_argument('-v', '--verbose', action='store_true', default=False,
-        help='be verbose, set log level to info, overrides --log-level')
+    loglevel_parser = parser.add_mutually_exclusive_group(required=False)
+    loglevel_parser.add_argument('--log-level', dest='log_level', default='warn',
+        help='log level. defaults to warn')
+    loglevel_parser.add_argument('-d', '--debug', action='store_const', const='debug', dest='log_level',
+        help='set log level to debug')
+    loglevel_parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
+        help='be verbose, set log level to info')
     parser.add_argument('-q', '--quiet', action='store_true', default=False,
         help='do not log received messages to stdout')
     parser.add_argument('-c', '--config', help='path to json config file')
 
     args = parser.parse_args(argv)
 
-    level = getattr(logging, args.log_level.upper())
+    level = logging.getLevelName(args.log_level.upper())
     logging.basicConfig(level=level, format=args.log_format, datefmt='%Y-%m-%d %H:%M:%S', stream=sys.stdout)
-
-    if args.verbose:
-        logging.root.setLevel(logging.INFO)
-    # debug overrides verbose
-    if args.debug:
-        logging.root.setLevel(logging.DEBUG)
 
     log = logging.getLogger('zerolog')
     log.debug(args)

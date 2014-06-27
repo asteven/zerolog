@@ -5,11 +5,11 @@ import sys
 import argparse
 import logging
 import time
+import json
 
 import gevent
 
 import zmq.green as zmq
-from zmq.utils.jsonapi import jsonmod as json
 
 import zerolog
 import zerolog.client
