@@ -119,6 +119,7 @@ class Server(gevent.Greenlet):
         _publish = self.context.socket(zmq.XPUB)
         _publish.hwm = 100000
         _publish.linger = 1000
+        _publish.setsockopt(zmq.XPUB_VERBOSE, 1)
         _publish.bind(zerolog.get_endpoint(self.config['endpoints']['publish']))
         self.sockets['publish'] = _publish
 
