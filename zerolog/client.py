@@ -106,7 +106,7 @@ def parse_args(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('--endpoint', required=False,
         help='uri of the zerolog control socket')
-    default_log_format = '%(levelname)s: %(name)s: %(message)s'
+    default_log_format = '[%(process)s] %(name)s: %(levelname)s: %(message)s'
     parser.add_argument('--log-format', default=default_log_format,
         help='log format string. defaults to {}'.format(default_log_format.replace('%', '%%')))
     loglevel_parser = parser.add_mutually_exclusive_group(required=False)
