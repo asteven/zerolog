@@ -186,12 +186,15 @@ class ConfigManager(gevent.Greenlet):
                 status = rc[0] == "\x01"
                 if status:
                     self.log.debug('client subscribed to {}'.format(subscription))
-                    self.subscriptions.append(subscription)
+                    if subscription not in self.subscriptions:
+                        self.subscriptions.append(subscription)
                     if subscription.startswith(zerolog.config_prefix):
                         self.add(subscription[len(zerolog.config_prefix):])
                 else:
                     self.log.debug('last client unsubscribed from {}'.format(subscription))
-                    self.subscriptions.remove(subscription)
+                    if subscription in self.subscriptions:
+                        self.subscriptions.remove(subscription)
+                self.log.debug('current subscriptions: {0}'.format(self.subscriptions))
             except zmq.ZMQError as e:
                 self.log.error('{0}'.format(e))
 
