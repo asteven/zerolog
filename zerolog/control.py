@@ -81,7 +81,8 @@ def parse_args(argv):
     parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
         help='be verbose, set log level to info')
     parser.add_argument('--endpoint', required=False,
-        help='uri of the zerolog control socket')
+        help='uri of the zerolog control socket',
+        default=zerolog.default_endpoints['control'])
     parser.add_argument('command', help='command to run')
 
     args, remaining_args = parser.parse_known_args(argv)
@@ -99,7 +100,7 @@ def main(argv=sys.argv[1:]):
     log.debug('args: {0}'.format(args))
     log.debug('command_args: {0}'.format(command_args))
 
-    client = ControllerClient(endpoint=args.endpoint)
+    client = ControllerClient(endpoint=zerolog.get_endpoint(args.endpoint))
 
     try:
         client.run(args.command, command_args)
