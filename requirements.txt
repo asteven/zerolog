@@ -1,2 +1,3 @@
-gevent
+cython
+git+git://github.com/fantix/gevent.git#egg=gevent
 pyzmq

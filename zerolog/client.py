@@ -28,7 +28,7 @@ class ZerologClient(object):
         self.endpoint = endpoint
         self._id = uuid.uuid4().hex
         self.socket = self.context.socket(zmq.DEALER)
-        self.socket.setsockopt(zmq.IDENTITY, self._id)
+        self.socket.setsockopt_string(zmq.IDENTITY, self._id)
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.connect(self.endpoint)
         self._timeout = timeout
@@ -57,7 +57,7 @@ class ZerologClient(object):
         while True:
             try:
                 message = self.socket.recv()
-                response = json.loads(message)
+                response = json.loads(message.decode())
                 if response['id'] != message_id:
                     # we got the wrong message
                     continue
@@ -72,7 +72,7 @@ class LogSubscriber(gevent.Greenlet):
     def __init__(self, uri, topics=None, context=None, log_level_name='info'):
         super(LogSubscriber, self).__init__()
         self.uri = uri
-        self.topics = topics or ['']
+        self.topics = topics or [b'']
         self.context = context or zmq.Context.instance()
         self.log_level_name = log_level_name
         self.log_level = logging.getLevelName(self.log_level_name.upper())
@@ -88,7 +88,7 @@ class LogSubscriber(gevent.Greenlet):
         while self._keep_going:
             topic,record_json = self.socket.recv_multipart()
             name_and_level = topic[len(zerolog.stream_prefix):]
-            logger_name,level_name = name_and_level.split(':')
+            logger_name,level_name = name_and_level.split(b':')
             logger = zerolog.getLocalLogger(logger_name)
             if logger.isEnabledFor(logging.getLevelName(level_name)):
                 # inject log record into local logger
@@ -116,7 +116,7 @@ def parse_args(argv):
         help='set log level to debug')
     loglevel_parser.add_argument('-v', '--verbose', action='store_const', const='info', dest='log_level',
         help='be verbose, set log level to info')
-    parser.add_argument('topic', default=None,
+    parser.add_argument('topic', default=None, type=bytes,
         nargs='*',
         help='one or more logger names to subscribe for')
 

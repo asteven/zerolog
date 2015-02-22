@@ -24,8 +24,8 @@ except ImportError:
 
 
 # prefixes to distinguish between log and config subscriptions
-stream_prefix = 'stream.'
-config_prefix = 'config.'
+stream_prefix = b'stream.'
+config_prefix = b'config.'
 
 
 # default endpoints
@@ -118,7 +118,7 @@ class ZerologManager(logging.Manager):
         while self._keep_going:
             topic, message = self.socket.recv_multipart()
             logger_name = topic[len(config_prefix):]
-            config = json.loads(message)
+            config = json.loads(message.decode())
             logger = self.getLogger(logger_name)
             self.configure(logger, config)
 
@@ -153,6 +153,8 @@ class ZerologManager(logging.Manager):
     def subscribe(self, name):
         """Subscribe to receive config updates for a logger.
         """
+        if not isinstance(name, bytes):
+            name = name.encode('ascii')
         if name not in self.subscribed_loggers:
             self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
             self.subscribed_loggers.append(name)
@@ -244,7 +246,7 @@ class ZerologHandler(logging.Handler):
             )
             self.socket.send_multipart([
                 topic.encode('utf-8'),
-                json.dumps(record_dict)
+                json.dumps(record_dict).encode('utf-8')
             ])
         except:
             self.handleError(record)

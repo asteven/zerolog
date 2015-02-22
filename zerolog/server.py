@@ -89,12 +89,13 @@ class Dispatcher(gevent.Greenlet):
             if not self.quiet:
                 # message is assumed to be a tuple of: (topic, record_json)
                 topic,record_json = message
+                topic = topic.decode()
                 name_and_level = topic[len(zerolog.stream_prefix):]
                 logger_name,level_name = name_and_level.split(':')
                 logger = zerolog.getLocalLogger(logger_name)
                 if logger.isEnabledFor(logging.getLevelName(level_name)):
                     # inject log record into local logger
-                    record_dict = json.loads(record_json)
+                    record_dict = json.loads(record_json.decode())
                     record = logging.makeLogRecord(record_dict)
                     logger.handle(record)
             self.publisher.send_multipart(message)
@@ -112,7 +113,7 @@ class Server(gevent.Greenlet):
         self.sockets = {}
 
         _collect = self.context.socket(zmq.SUB)
-        _collect.setsockopt(zmq.SUBSCRIBE, '')
+        _collect.setsockopt_string(zmq.SUBSCRIBE, '')
         _collect.bind(zerolog.get_endpoint(self.config['endpoints']['collect']))
         self.sockets['collect'] = _collect
 
@@ -183,7 +184,7 @@ class ConfigManager(gevent.Greenlet):
             try:
                 rc = self.socket.recv()
                 subscription = rc[1:]
-                status = rc[0] == "\x01"
+                status = rc[0] == 1
                 if status:
                     self.log.debug('client subscribed to {}'.format(subscription))
                     if subscription not in self.subscriptions:
@@ -252,10 +253,11 @@ class ConfigManager(gevent.Greenlet):
         config = self.get(logger_name)
         if config:
             self.log.debug('configure logger {0} with: {1}'.format(logger_name, config))
-            topic = zerolog.config_prefix + logger_name
+            topic = zerolog.config_prefix + logger_name.encode('ascii')
+            json_string = json.dumps(config)
             self.socket.send_multipart([
-                topic.encode('utf-8'),
-                json.dumps(config)
+                topic,
+                json_string.encode()
             ])
 
     @property
@@ -293,7 +295,7 @@ class Controller(gevent.Greenlet):
 
     def dispatch(self, client_id, message):
         try:
-            json_msg = json.loads(message)
+            json_msg = json.loads(message.decode())
         except ValueError:
             return self.send_error(client_id, None, message, 'json invalid',
                                    errno=errors.INVALID_JSON)
