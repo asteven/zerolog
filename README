@@ -48,6 +48,12 @@ PYTHONPATH="." python zerolog tail
 PYTHONPATH="." python zerolog emit 0.1
 PYTHONPATH="." python zerolog zeroemit 0.1
 PYTHONPATH="." python zerolog multiemit 0.5
+
+# configure server on default control endpoint
+zerolog-control --endpoint tcp://127.0.0.42:6660 endpoints
+zerolog-control --endpoint tcp://127.0.0.42:6660 set __main__ level:DEBUG
+zerolog-client --endpoint tcp://127.0.0.42:6660 -d
+
 --------------------------------------------------------------------------------
 
 # using json config file
@@ -65,5 +71,5 @@ zerolog-server --config ./doc/dev/config.json -d
 zerolog-control --endpoint ipc:///tmp/zerolog/control -d endpoints
 zerolog-control --endpoint ipc:///tmp/zerolog/control -d list
 zerolog-client --endpoint ipc:///tmp/zerolog/control -d
-zerolog-control --endpoint ipc:///tmp/zerolog/control set some.logger level:DEBUG
+zerolog-control --endpoint ipc:///tmp/zerolog/control set example level:DEBUG
 zerolog-control --endpoint ipc:///tmp/zerolog/control set some.logger level:INFO
