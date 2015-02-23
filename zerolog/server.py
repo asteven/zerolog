@@ -208,7 +208,8 @@ class ConfigManager(gevent.Greenlet):
         """
         name = logger_name
         while name:
-            name = name.rpartition('.')[0]
+            self.log.debug(name)
+            name = name.rpartition(b'.')[0]
             config = self.get(name)
             if config:
                 self.configure(name)
@@ -253,7 +254,7 @@ class ConfigManager(gevent.Greenlet):
         config = self.get(logger_name)
         if config:
             self.log.debug('configure logger {0} with: {1}'.format(logger_name, config))
-            topic = zerolog.config_prefix + logger_name.encode('ascii')
+            topic = zerolog.config_prefix + logger_name.encode()
             json_string = json.dumps(config)
             self.socket.send_multipart([
                 topic,

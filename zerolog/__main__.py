@@ -224,7 +224,7 @@ def main():
         from zerolog.client import LogSubscriber
         job = LogSubscriber(endpoints['publish'].replace('*', 'localhost'), topics=sys.argv[2:])
     else:
-        print("invalid usage : dispatch|tail|emit|zeroemit|multiemit")
+        print("invalid usage : dispatch|tail|emit|zeroemit|multiemit|debugemit")
         sys.exit(1)
 
     try:

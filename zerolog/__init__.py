@@ -117,7 +117,7 @@ class ZerologManager(logging.Manager):
         """
         while self._keep_going:
             topic, message = self.socket.recv_multipart()
-            logger_name = topic[len(config_prefix):]
+            logger_name = topic[len(config_prefix):].decode()
             config = json.loads(message.decode())
             logger = self.getLogger(logger_name)
             self.configure(logger, config)
@@ -154,7 +154,7 @@ class ZerologManager(logging.Manager):
         """Subscribe to receive config updates for a logger.
         """
         if not isinstance(name, bytes):
-            name = name.encode('ascii')
+            name = name.encode()
         if name not in self.subscribed_loggers:
             self.socket.setsockopt(zmq.SUBSCRIBE, config_prefix + name)
             self.subscribed_loggers.append(name)
@@ -239,16 +239,19 @@ class ZerologHandler(logging.Handler):
         # add hostname to record
         record_dict['hostname'] = self.hostname
         try:
-            topic = '{0}{1}:{2}'.format(
+            topic = b''.join([
                 stream_prefix,
-                record_dict['name'],
-                record_dict['levelname']
-            )
+                record_dict['name'].encode(),
+                b':',
+                record_dict['levelname'].encode()
+            ])
+            json_string = json.dumps(record_dict)
             self.socket.send_multipart([
-                topic.encode('utf-8'),
-                json.dumps(record_dict).encode('utf-8')
+                topic,
+                json_string.encode()
             ])
         except:
+            raise
             self.handleError(record)
 
 
