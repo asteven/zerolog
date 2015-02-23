@@ -190,7 +190,8 @@ class ConfigManager(gevent.Greenlet):
                     if subscription not in self.subscriptions:
                         self.subscriptions.append(subscription)
                     if subscription.startswith(zerolog.config_prefix):
-                        self.add(subscription[len(zerolog.config_prefix):])
+                        logger_name = subscription[len(zerolog.config_prefix):]
+                        self.add(logger_name.decode())
                 else:
                     self.log.debug('last client unsubscribed from {}'.format(subscription))
                     if subscription in self.subscriptions:
@@ -209,7 +210,7 @@ class ConfigManager(gevent.Greenlet):
         name = logger_name
         while name:
             self.log.debug(name)
-            name = name.rpartition(b'.')[0]
+            name = name.rpartition('.')[0]
             config = self.get(name)
             if config:
                 self.configure(name)
